@@ -1,0 +1,27 @@
+{
+  "name": "cloud-ide-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Distributed Cloud IDE & Sandboxed Code Execution Platform - Zaalima Project 2",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "services/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@cloud-ide/web",
+    "dev:api": "npm run dev --workspace=@cloud-ide/api",
+    "build:shared": "npm run build --workspace=@cloud-ide/shared",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
