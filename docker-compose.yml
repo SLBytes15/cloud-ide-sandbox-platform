@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # Reverse Proxy with Sticky WebSocket Routing (ADR-008 & Week 4.C)
+  proxy:
+    image: nginx:alpine
+    container_name: zaalima-proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+      - api
+    restart: always
+
+  # Frontend Web Client (React 19 + Monaco Editor)
+  web:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    container_name: zaalima-web
+    expose:
+      - "80"
+    environment:
+      - VITE_API_URL=/api/v1
+    restart: always
+
+  # Backend API & WebSocket Orchestrator
+  api:
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    container_name: zaalima-api
+    expose:
+      - "5001"
+    environment:
+      - NODE_ENV=production
+      - PORT=5001
+      - MONGODB_URI=mongodb://mongo:27017/cloud_ide
+      - CLIENT_ORIGIN=*
+    depends_on:
+      - mongo
+    restart: always
+
+  # MongoDB Persistence
+  mongo:
+    image: mongo:7-jammy
+    container_name: zaalima-mongo
+    volumes:
+      - mongo_data:/data/db
+    expose:
+      - "27017"
+    restart: always
+
+volumes:
+  mongo_data:

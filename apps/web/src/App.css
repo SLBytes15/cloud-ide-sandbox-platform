@@ -377,6 +377,73 @@
   color: #8b949e;
 }
 
+/* Terminal Dock */
+.terminal-dock {
+  height: 220px;
+  min-height: 120px;
+  background-color: #0d1117;
+  border-top: 1px solid #21262d;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-dock-minimized {
+  height: 32px;
+  min-height: 32px;
+}
+
+.terminal-dock-header {
+  height: 32px;
+  padding: 0 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #161b22;
+  border-bottom: 1px solid #21262d;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #8b949e;
+  user-select: none;
+}
+
+.terminal-dock-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.terminal-status-pill {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.status-connected {
+  background-color: #23863633;
+  color: #3fb950;
+  border: 1px solid #23863666;
+}
+
+.status-connecting {
+  background-color: #d2992233;
+  color: #e3b341;
+  border: 1px solid #d2992266;
+}
+
+.status-disconnected {
+  background-color: #f8514933;
+  color: #f85149;
+  border: 1px solid #f8514966;
+}
+
+.terminal-dock-body {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  overflow: hidden;
+  background-color: #0d1117;
+}
+
 /* Status Bar */
 .ide-statusbar {
   display: flex;

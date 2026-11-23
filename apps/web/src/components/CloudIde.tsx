@@ -8,8 +8,10 @@ import {
 import { FileTreeExplorer } from './FileTreeExplorer.js';
 import { TabBar, OpenTab } from './TabBar.js';
 import { MonacoEditorView } from './MonacoEditorView.js';
-import { Code2, Play, Save } from 'lucide-react';
+import { TerminalView } from './TerminalView.js';
+import { Code2, Play, Save, Terminal as TerminalIcon, Cpu } from 'lucide-react';
 import { getLanguageFromPath } from '../utils/language.js';
+import { executeWasmFallback } from '../utils/wasmeval.js';
 
 export const CloudIde: React.FC = () => {
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>(mockWorkspaceSummaries);
@@ -25,6 +27,7 @@ export const CloudIde: React.FC = () => {
   const [activeTabPath, setActiveTabPath] = useState<string>('/src/index.js');
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>('Ready');
+  const [showTerminal, setShowTerminal] = useState<boolean>(true);
 
   // Load workspaces from backend API on mount
   const fetchWorkspaces = async () => {
@@ -109,6 +112,41 @@ export const CloudIde: React.FC = () => {
     );
   };
 
+  const handleExecuteScript = async () => {
+    if (!activeTabPath || !activeContent.trim()) {
+      setStatusMessage('No code to execute in active buffer');
+      return;
+    }
+
+    setStatusMessage(`Executing ${activeTabPath} in ${activeWorkspace?.runtime || 'node'} sandbox...`);
+    setShowTerminal(true);
+
+    try {
+      const res = await fetch(`/api/v1/workspaces/${activeWorkspaceId}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: activeContent,
+          runtime: activeWorkspace?.runtime || 'node',
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          const { durationMs, exitCode, status } = json.data;
+          setStatusMessage(`Completed in ${durationMs}ms (exit code ${exitCode}) [${status}]`);
+        } else {
+          setStatusMessage('Execution completed');
+        }
+      } else {
+        setStatusMessage('Execution failed (server error)');
+      }
+    } catch {
+      setStatusMessage('Offline execution simulated');
+    }
+  };
+
   const handleSaveActiveFile = async () => {
     if (!activeTabPath) return;
     setIsSaving(true);
@@ -147,6 +185,16 @@ export const CloudIde: React.FC = () => {
     setStatusMessage(`Created ${path}`);
   };
 
+  const handleWasmOfflineRun = async () => {
+    setStatusMessage('Running offline client-side WebAssembly fallback...');
+    const result = await executeWasmFallback('square', [12]);
+    if (result.success) {
+      setStatusMessage(`WASM (square(12)): ${result.result} (${result.durationMs}ms offline)`);
+    } else {
+      setStatusMessage(result.output);
+    }
+  };
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0];
   const activeContent = activeTabPath ? fileBuffers.get(activeTabPath) || '' : '';
   const activeLanguage = activeTabPath ? getLanguageFromPath(activeTabPath) : 'plaintext';
@@ -180,6 +228,22 @@ export const CloudIde: React.FC = () => {
         <div className="toolbar-right">
           <button
             className="toolbar-btn primary-btn"
+            onClick={handleWasmOfflineRun}
+            title="Instant Offline Client-side WebAssembly Execution"
+          >
+            <Cpu size={14} color="#bc8cff" />
+            <span>WASM Offline</span>
+          </button>
+          <button
+            className="toolbar-btn primary-btn"
+            onClick={() => setShowTerminal((prev) => !prev)}
+            title="Toggle Terminal Dock"
+          >
+            <TerminalIcon size={14} />
+            <span>Terminal</span>
+          </button>
+          <button
+            className="toolbar-btn primary-btn"
             onClick={handleSaveActiveFile}
             disabled={!activeTabPath || isSaving}
             title="Save Buffer (Ctrl+S / Cmd+S)"
@@ -190,7 +254,7 @@ export const CloudIde: React.FC = () => {
           <button
             className="toolbar-btn success-btn"
             title="Execute Code in Ephemeral Sandbox"
-            onClick={() => setStatusMessage(`Execution requested for ${activeWorkspace?.runtime || 'node'} sandbox...`)}
+            onClick={handleExecuteScript}
           >
             <Play size={14} />
             <span>Run</span>
@@ -231,6 +295,14 @@ export const CloudIde: React.FC = () => {
               onChangeContent={handleContentChange}
             />
           </div>
+
+          {/* Docked Interactive Terminal */}
+          {showTerminal && (
+            <TerminalView
+              workspaceId={activeWorkspace?.id || 'ws_default'}
+              onToggleMinimize={() => setShowTerminal((prev) => !prev)}
+            />
+          )}
         </main>
       </div>
 
