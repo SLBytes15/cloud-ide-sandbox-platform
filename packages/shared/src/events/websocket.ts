@@ -24,3 +24,39 @@ export interface TerminalOutputPayload {
   workspaceId: string;
   data: string;
 }
+
+export interface TerminalResizePayload {
+  workspaceId: string;
+  cols: number;
+  rows: number;
+}
+
+export interface ExecutionStartPayload {
+  jobId: string;
+  workspaceId: string;
+  command: string;
+}
+
+export interface ExecutionChunkPayload {
+  jobId: string;
+  stream: 'stdout' | 'stderr';
+  data: string;
+}
+
+export interface ExecutionDonePayload {
+  jobId: string;
+  exitCode: number | null;
+  durationMs: number;
+}
+
+export interface WorkspaceUserPresencePayload {
+  workspaceId: string;
+  userId: string;
+  username: string;
+}
+
+export interface CollaborationSyncPayload {
+  workspaceId: string;
+  fileId: string;
+  update: string; // Base64 encoded Yjs update binary
+}

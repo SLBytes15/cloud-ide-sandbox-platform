@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import './App.css';
+import { CloudIde } from './components/CloudIde.js';
+import { Code2, LayoutDashboard, CheckCircle } from 'lucide-react';
 
 interface HealthData {
   status: string;
@@ -14,6 +16,7 @@ interface HealthData {
 }
 
 export function App() {
+  const [activeView, setActiveView] = useState<'ide' | 'dashboard'>('ide');
   const [health, setHealth] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,102 +49,101 @@ export function App() {
 
   return (
     <div className="app-container">
+      {/* Global Header */}
       <header className="top-bar">
         <div className="brand">
           <span>⚡ Zaalima Cloud IDE</span>
-          <span className="badge">Project 2 Initial Setup</span>
+          <span className="badge">Week 1 Platform</span>
         </div>
-        <div>
-          <span style={{ fontSize: '0.85rem', color: '#8b949e' }}>Branch: <code>main</code></span>
+
+        {/* View Switcher: Interactive IDE vs Status Dashboard */}
+        <div className="view-switcher">
+          <button
+            className={`nav-btn ${activeView === 'ide' ? 'nav-btn-active' : ''}`}
+            onClick={() => setActiveView('ide')}
+          >
+            <Code2 size={15} />
+            <span>Cloud IDE Editor</span>
+          </button>
+          <button
+            className={`nav-btn ${activeView === 'dashboard' ? 'nav-btn-active' : ''}`}
+            onClick={() => setActiveView('dashboard')}
+          >
+            <LayoutDashboard size={15} />
+            <span>Architecture & Health</span>
+          </button>
+        </div>
+
+        <div className="top-bar-right">
+          <span className="branch-tag">Branch: <code>saransh</code></span>
         </div>
       </header>
 
-      <main className="main-content">
-        <section className="hero">
-          <h1>Distributed Cloud IDE Platform</h1>
-          <p>Modular MERN Stack + TypeScript Monorepo Foundation</p>
-        </section>
+      {/* Main Container */}
+      {activeView === 'ide' ? (
+        <CloudIde />
+      ) : (
+        <main className="main-content">
+          <section className="hero">
+            <h1>Distributed Cloud IDE Platform</h1>
+            <p>Phase 1 Foundation: Monaco Editor + Mongoose Persistence + Container Sandboxing</p>
+          </section>
 
-        <section className="grid-cards">
-          <div className="card">
-            <div className="card-header">
-              <span>🖥️</span>
-              <h3>Frontend Foundation</h3>
+          <section className="grid-cards">
+            <div className="card">
+              <div className="card-header">
+                <span>🖥️</span>
+                <h3>Week 1.A: Frontend IDE</h3>
+              </div>
+              <p>React 19 + Monaco Editor + Tabs</p>
+              <ul>
+                <li><CheckCircle size={14} color="#3fb950" /> Monaco Editor integration active</li>
+                <li><CheckCircle size={14} color="#3fb950" /> Multi-file tab switching operational</li>
+                <li><CheckCircle size={14} color="#3fb950" /> Virtualized file tree explorer</li>
+                <li><CheckCircle size={14} color="#3fb950" /> Multi-language syntax highlighting</li>
+              </ul>
             </div>
-            <p>React 19 + TypeScript + Vite</p>
-            <ul>
-              <li>Monaco Editor ready integration point</li>
-              <li>xterm.js interactive terminal ready</li>
-              <li>Multi-tab workspace state architecture</li>
-              <li>WebSocket connection client stub</li>
-            </ul>
-          </div>
 
-          <div className="card">
-            <div className="card-header">
-              <span>⚙️</span>
-              <h3>Backend API Status</h3>
-            </div>
-            <p>Express 5 + TypeScript + Mongoose</p>
-            <div className="health-status">
-              {loading && (
-                <div>
-                  <span className="status-indicator status-pending" />
-                  <span>Checking backend health...</span>
-                </div>
-              )}
-              {error && (
-                <div>
-                  <span className="status-indicator status-err" />
-                  <span style={{ color: '#f85149' }}>Disconnected: {error}</span>
-                </div>
-              )}
-              {health && (
-                <div>
+            <div className="card">
+              <div className="card-header">
+                <span>⚙️</span>
+                <h3>Week 1.B: Backend & Persistence</h3>
+              </div>
+              <p>Express 5 + Mongoose + MongoDB</p>
+              <div className="health-status">
+                {loading && <div>Checking backend health...</div>}
+                {error && <div style={{ color: '#f85149' }}>Status: Disconnected ({error})</div>}
+                {health && (
                   <div>
-                    <span className="status-indicator status-ok" />
-                    <strong>Status: {health.status}</strong>
+                    <div>Status: <strong>{health.status}</strong></div>
+                    <div>Database: {health.database?.status}</div>
+                    <div>Uptime: {Math.floor(health.uptime)}s</div>
                   </div>
-                  <div>Service: {health.service} v{health.version}</div>
-                  <div>Database: {health.database?.status ?? 'Not connected'}</div>
-                  <div>Uptime: {Math.floor(health.uptime)}s</div>
-                </div>
-              )}
+                )}
+              </div>
+              <ul>
+                <li><CheckCircle size={14} color="#3fb950" /> Mongoose models (Workspace, File, Job)</li>
+                <li><CheckCircle size={14} color="#3fb950" /> REST APIs: <code>/api/v1/workspaces</code></li>
+                <li><CheckCircle size={14} color="#3fb950" /> Hierarchical file tree builder</li>
+              </ul>
             </div>
-            <button className="btn" onClick={checkHealth} disabled={loading} style={{ marginTop: '0.5rem' }}>
-              {loading ? 'Testing...' : 'Recheck /api/health'}
-            </button>
-          </div>
 
-          <div className="card">
-            <div className="card-header">
-              <span>📦</span>
-              <h3>Shared Contracts</h3>
+            <div className="card">
+              <div className="card-header">
+                <span>🛡️</span>
+                <h3>Week 1.C: Container Lifecycle</h3>
+              </div>
+              <p>Docker Engine API + cgroups v2</p>
+              <ul>
+                <li><CheckCircle size={14} color="#3fb950" /> Ephemeral container manager</li>
+                <li><CheckCircle size={14} color="#3fb950" /> 512MB RAM cap & 1.0 vCPU quota</li>
+                <li><CheckCircle size={14} color="#3fb950" /> Read-only rootfs & non-root UID</li>
+                <li><CheckCircle size={14} color="#3fb950" /> Automatic timeout & cleanup hooks</li>
+              </ul>
             </div>
-            <p><code>@cloud-ide/shared</code> Package</p>
-            <ul>
-              <li>Typed DTOs for Workspaces & Files</li>
-              <li>REST API request / response contracts</li>
-              <li>WebSocket message payloads</li>
-              <li>Runtime agnostic TypeScript types</li>
-            </ul>
-          </div>
-
-          <div className="card">
-            <div className="card-header">
-              <span>🛡️</span>
-              <h3>Sandboxed Execution Boundary</h3>
-            </div>
-            <p><code>services/execution</code></p>
-            <ul>
-              <li>Decoupled from initial setup per architecture</li>
-              <li>Docker Engine API runtime integration</li>
-              <li>node-pty pseudo-terminal allocation</li>
-              <li>cgroups v2, seccomp & namespace isolation</li>
-            </ul>
-          </div>
-        </section>
-      </main>
+          </section>
+        </main>
+      )}
     </div>
   );
 }
