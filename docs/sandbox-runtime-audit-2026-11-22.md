@@ -405,3 +405,242 @@ Checked 22 November 2026.
 6. Add focused tests for lifecycle boundaries, cleanup, timeout, authorization, and resource configuration.
 
 No Docker implementation or architecture/security policy was finalized in this audit.
+
+---
+
+# 23 November 2026 continuation: verified execution lifecycle and readiness plan
+
+## 17. Scope and repository verification
+
+This section updates, rather than replaces, the 22 November 2026 audit.
+
+- Repository root: `C:\Users\Mahak\Documents\GitHub\Zaalima_Project2\cloud-ide-sandbox-platform`
+- Remote: `https://github.com/SLBytes15/cloud-ide-sandbox-platform.git`
+- Current branch: `mahak`
+- Working tree at verification start: clean
+- Previous audit document: present and verified at `docs/sandbox-runtime-audit-2026-11-22.md`
+- Result: the yesterday audit's core status remains accurate: `services/execution/` is documentation-only, the API has no execution route, and no Docker lifecycle implementation exists.
+
+The repository is on `mahak`; no branch was created or switched. The implementation environment is not sandboxed, and these checks did not require host security changes or Docker operations.
+
+## 18. Actual execution-runtime component status
+
+| Component | Actual status | Evidence |
+|---|---|---|
+| Execution service source | **Missing** | `services/execution/` contains only `README.md` |
+| Execution service manifest/build/test configuration | **Missing** | No `services/execution/package.json`, `tsconfig.json`, Dockerfile, Compose file, or test directory |
+| API execution endpoints | **Missing** | `apps/api/src/routes/index.ts` mounts only health routes |
+| API WebSocket server | **Missing** | No WebSocket server or execution handler in `apps/api/src/` |
+| Shared execution contracts | **Partial implementation / data types only** | `packages/shared/src/types/execution.ts`; `packages/shared/src/events/websocket.ts` |
+| Execution persistence | **Documented/proposed only** | `docs/DATABASE_SCHEMA.md` defines `execution_jobs`; no Mongoose model or repository exists |
+| Docker dependency or client | **Missing** | No Docker client dependency or lifecycle call exists |
+| Process or PTY implementation | **Missing** | No `node-pty`, child-process, PTY, or stream implementation exists |
+| Frontend execution/terminal client | **Missing** | `apps/web/src/` has no verified execution or terminal client implementation |
+
+The `ExecutionJob` and `ExecutionRequest` interfaces are declared code, but they are contracts only. The WebSocket union and payload interfaces are also declared code only. Neither is evidence of an active runtime.
+
+## 19. Nine-stage execution lifecycle matrix
+
+| # | Stage | Status | Evidence | Dependencies/blockers | Required implementation |
+|---|---|---|---|---|---|
+| 1 | Execution request received | **Missing** | No execution REST route or WebSocket handler exists; `apps/api/src/routes/index.ts` registers only health routes | Approved transport and request contract | Add the approved backend entry point and dispatch mechanism, with trace/job identity and bounded request shape |
+| 2 | Validation and authorization according to approved contracts | **Missing runtime validation and authorization** | The shared `ExecutionRequest` declaration exists in `packages/shared/src/types/execution.ts`, but it is a compile-time contract only. There is no runtime request validator, workspace authorization check, or auth module implementation | Approved workspace authorization policy and request schema | Validate job fields and command policy; verify workspace ownership/collaboration and short-lived execution authorization; reject before dispatch |
+| 3 | Runtime/container provisioned | **Missing** | `services/execution/README.md` is documentation only; no Docker package or create/start calls exist | Approved service boundary, Docker mechanism, daemon access, image allowlist, container policy | Implement and test approved container creation/attachment only after architecture approval |
+| 4 | Approved workspace files made available | **Missing** | No workspace snapshot, copy, mount, or file transfer implementation exists | Approved filesystem/source-transfer policy and workspace ownership boundary | Use only the approved source materialization mechanism; prevent cross-workspace and host-path exposure |
+| 5 | Process started | **Missing** | No process, Docker exec, or PTY implementation exists | Approved runtime image, command model, user identity, entrypoint, and PTY/batch choice | Implement an approved process start primitive with bounded environment and lifecycle identity |
+| 6 | stdout, stderr and exit status captured | **Missing runtime collection and publication** | Shared `ExecutionJob.output`, `error`, and `exitCode` fields exist, and terminal/execution WebSocket event names are declared, but these declarations do not provide a runtime stdout/stderr collector, stream publisher, exit-status handler, or WebSocket stream handler | Approved streaming protocol, output limits, log/error handling | Implement bounded stdout/stderr collection and exit status delivery by the approved transport |
+| 7 | Timeout and resource limits enforced according to approved policy | **Missing** | Documentation proposes values, but no implementation exists; examples in `docs/SECURITY.md` are not approved runtime values | Approved wall-clock/inactivity/CPU/memory/PID/disk/output/concurrency policy | Apply only approved limits and test timeout/cancellation behavior |
+| 8 | Process/container stopped | **Missing** | No stop, cancel, signal, wait, or PTY close implementation exists | Approved termination sequence, grace period, and timeout policy | Implement cancellation and guaranteed stop/wait behavior with escalation where approved |
+| 9 | Temporary resources cleaned up | **Missing** | No container removal, volume deletion, temporary directory, lease, or orphan reconciliation exists | Approved cleanup guarantees and storage lifecycle | Implement deterministic removal plus crash/restart reconciliation and verify no retained resources |
+
+**Classification key:** these rows distinguish actual repository evidence from future work. “Missing” means no executable implementation was found, not that the requirement is rejected.
+
+## 20. Docker availability and verification
+
+Checked 23 November 2026:
+
+| Command | Actual result |
+|---|---|
+| `docker version --format '{{json .}}'` | Docker CLI is not recognized in PowerShell |
+| `docker info --format '{{json .}}'` | Docker CLI is not recognized in PowerShell |
+| `node --version` | `v22.23.1` |
+| `npm --version` | `12.2.0` |
+| `npm run typecheck` | Failed because `tsc` was not available in workspace command resolution for shared, API, and web workspaces |
+
+No Docker daemon, Docker Desktop installation, Engine API, container, image, Linux namespace, cgroup, or privileged operation was verified on this host. Docker CLI/daemon availability could not be verified, and Docker execution could not be tested locally.
+
+`npm run typecheck` was a safe existing check, but dependencies are not installed in this worktree; this is not evidence of source type errors. The setup verification script was inspected and not run because it may create `.env` from `.env.example`, so it was outside this documentation-only task.
+
+## 21. Source-backed Docker/Linux security research
+
+Checked 23 November 2026. Findings below are source facts first, followed by project implications and caveats.
+
+### 21.1 Docker Engine API lifecycle
+
+| Source title | Exact URL | Relevant finding | Practical implication | Limitations/caveats |
+|---|---|---|---|---|
+| Docker Engine API | https://docs.docker.com/reference/api/engine/ | The Engine API is a REST API exposed by the daemon. API and SDK versions require negotiation or compatibility selection. | Future Node integration must pin or negotiate an approved API version and verify daemon compatibility before lifecycle calls. | No daemon or API version is available locally, so this cannot be implemented or performance-tested here. |
+
+Lifecycle operations relevant to this project include create, inspect, start, wait, stop, logs/statistics, and remove. Container configuration is supplied at creation and can include resources, mounts, network mode, capabilities, security options, and user settings.
+
+### 21.2 Docker security and daemon access
+
+| Source title | Exact URL | Relevant finding | Practical implication | Limitations/caveats |
+|---|---|---|---|---|
+| Docker Engine security | https://docs.docker.com/engine/security/ | Namespaces and cgroups are core isolation/resource controls; the daemon has substantial host privileges; trusted users only should control it; bind mounts and privileged/container configuration can expose or change the host. | Keep Docker daemon access behind the execution worker, never expose it directly to users, and prohibit privileged containers and host-root mounts without separate approval. | Docker's protections do not remove kernel/runtime vulnerabilities or unsafe host configuration. |
+| Docker daemon attack surface details are on Docker Engine security | https://docs.docker.com/engine/security/ | Web/API parameter checking, daemon socket trust, and restricted host mounts are all essential. | The runtime must not accept arbitrary host paths, socket mounts, devices, or privileged flags from a job request. | Deployment-specific socket and authorization controls remain unresolved. |
+
+### 21.3 Linux namespaces
+
+| Source title | Exact URL | Relevant finding | Practical implication | Limitations/caveats |
+|---|---|---|---|---|
+| Linux namespaces | https://man7.org/linux/man-pages/man7/namespaces.7.html | Linux namespaces isolate Cgroup, IPC, network, mount, PID, time, user, and UTS resources. | Docker namespace defaults are useful, but the project must approve exactly which namespaces and namespace modes are required. | Namespace support is not a sandbox guarantee; kernel vulnerabilities and dangerous mounts remain risks. |
+
+### 21.4 cgroups and resource controls
+
+| Source title | Exact URL | Relevant finding | Practical implication | Limitations/caveats |
+|---|---|---|---|---|
+| Control Group v2 | https://docs.kernel.org/admin-guide/cgroup-v2.html | cgroups organize processes hierarchically and controllers distribute or limit CPU and memory resources; restrictions in ancestor cgroups are hierarchical and cannot be overridden farther down. | Target-host cgroup v2 availability and required controllers must be measured before policy or code is finalized. | Controller availability varies by kernel/configuration, and cgroups do not isolate data/process visibility by themselves. |
+| Docker `docker container run` reference | https://docs.docker.com/reference/cli/docker/container/run/ | Docker exposes CPU, memory, PID, block-I/O, cgroup namespace, device, mount, network, capability, and read-only-related options. | The execution service must map approved values into an immutable container spec and reject unapproved options. | The CLI reference does not prove host support or choose platform policy. |
+
+### 21.5 seccomp
+
+| Source title | Exact URL | Relevant finding | Practical implication | Limitations/caveats |
+|---|---|---|---|---|
+| Seccomp security profiles for Docker | https://docs.docker.com/engine/security/seccomp/ | Docker's default profile is an allowlist that denies around many syscalls and is moderately protective with wide compatibility; custom profiles are available through security options. | Recommendation pending approval: start with Docker's default profile, measure runtime compatibility, and custom-profile only with an owned test matrix. | Seccomp must be supported and configured on the target kernel/Docker build; it is not an application-level sandbox or a replacement for other controls. |
+
+### 21.6 Linux capabilities and privilege
+
+| Source title | Exact URL | Relevant finding | Practical implication | Limitations/caveats |
+|---|---|---|---|---|
+| capabilities(7) | https://man7.org/linux/man-pages/man7/capabilities.7.html | Linux capabilities divide traditional root privileges into independent units such as `CHOWN`, `DAC_OVERRIDE`, `SYS_ADMIN`, `NET_ADMIN`, `SYS_MODULE`, and `SYS_PTRACE`. | Containers should use an unprivileged user and drop all capabilities unless a measured runtime need receives separate approval. | Some capabilities are not safe to grant in an arbitrary-code sandbox; Docker defaults and target kernel versions still require verification. |
+| Rootless mode | https://docs.docker.com/engine/security/rootless/ | Rootless Docker runs the daemon and containers with a user namespace and no root daemon; it requires subordinate UID/GID setup. | A rootless or dedicated-execution-host option is a valid approval candidate, but it must be compatibility-tested. | Rootless mode may affect storage, networking, image builds, privileged tooling, and host support. |
+
+### 21.7 Filesystem mounts and writable paths
+
+| Source title | Exact URL | Relevant finding | Practical implication | Limitations/caveats |
+|---|---|---|---|---|
+| Bind mounts | https://docs.docker.com/engine/storage/bind-mounts/ | Bind mounts expose host paths and are writable by default. Read-only mode and explicit mount syntax can reduce write access. Remote bind mount paths belong to the daemon host. | For untrusted code, avoid host-root bind mounts and daemon socket/device mounts. File materialization and writable scratch paths require separate approval. | Read-only source mounts and ephemeral storage do not prevent misuse of paths the runtime deliberately exposes. |
+| Docker `docker container run` reference | https://docs.docker.com/reference/cli/docker/container/run/ | Creation options can combine read-only rootfs, tmpfs, bind mounts, volumes, devices, and environment values. | The approved container spec should explicitly enumerate allowed mounts and writable paths. | Not every host/filesystem combination supports every option; target support and ownership semantics require testing. |
+
+### 21.8 Network isolation and lateral movement
+
+| Source title | Exact URL | Relevant finding | Practical implication | Limitations/caveats |
+|---|---|---|---|---|
+| Networking overview | https://docs.docker.com/engine/network/ | Containers have networking enabled by default on Linux; the default bridge permits outgoing external connections and can permit container-to-container traffic. Host networking removes isolation, while `none` isolates; internal/custom networks can restrict reachability. Actual outbound and container-to-container connectivity depends on the Docker network mode and host firewall, routing, DNS, and cloud-network configuration. | Default network should not be left unconstrained for arbitrary code. The team must approve batch versus interactive network policy and allowlist/SSRF/metadata controls. | Network controls outside Docker, DNS, host firewalls, cloud metadata services, and internal routing must also be considered. |
+
+## 22. Threat model and documented-vs-recommended distinctions
+
+**Documented facts**
+
+- Docker shares the host kernel and relies on namespaces, cgroups, seccomp, capabilities, filesystem controls, and network controls.
+- Docker daemon control is highly privileged and must be isolated from untrusted input.
+- The default bridge has external reachability unless restricted.
+- Bind mounts are writable by default and require daemon-host path semantics.
+- cgroups and seccomp do not isolate against every kernel or runtime vulnerability.
+
+**Inference for this project**
+
+- The execution runtime can become a high-value host-control boundary if it accepts arbitrary mount, network, command, or daemon configuration.
+- Cross-workspace data exposure is likely unless authorization and source materialization are designed together.
+- Wall-clock limits alone are insufficient; output, process, memory, disk, and concurrency limits are also needed.
+
+**Recommendations, not approvals**
+
+- Prefer a dedicated least-privilege execution worker and daemon boundary.
+- Prefer no egress and constrained storage for batch jobs, pending policy approval.
+- Prefer Docker default seccomp before custom profile work.
+- Prefer rootless Docker or a dedicated execution host if target support is confirmed.
+- Add orphan-reconciliation sweeps even if container removal is requested during normal shutdown.
+
+**Unresolved decisions**
+
+- Backend/runtime trust boundary and dispatch contract.
+- Exact authorization and workspace validation behavior.
+- Privilege model, namespace set, cgroup v1/v2 support, seccomp profile, mounts, writable paths, network policy, limits, timeout values, cleanup guarantees, image provenance, and daemon topology.
+
+## 23. Approval-request draft for TEAM APPROVAL CHAT
+
+**Requested approvals**
+
+1. Approve the execution boundary: `apps/api` as an authorized dispatcher, `services/execution` as the isolated runtime owner, or a team-selected alternative.
+2. Approve the backend-to-runtime transport and the associated shared contracts.
+3. Approve authentication/authorization, workspace ownership/collaboration checks, and short-lived execution identity.
+4. Approve container privilege, capabilities, namespace, cgroup, seccomp, filesystem, network, timeout, output, and cleanup policies.
+5. Approve target images, runtime versions, image provenance/pinning, and daemon deployment topology.
+
+**Evidence**
+
+- ADR-004 in `docs/DECISIONS.md` approves isolation as a future boundary and defers Docker implementation.
+- `services/execution/` is README-only.
+- `apps/api/src/routes/index.ts` exposes only health routes.
+- Shared execution types and WebSocket names exist but have no runtime implementation.
+- Docker is absent from the local PATH, and no target daemon/host configuration is verifiable.
+- Official Docker/Linux sources above establish that container defaults and daemon control require explicit policy and host support.
+
+**Trade-offs**
+
+- Separate execution service: strongest ownership/isolation, more deployment/transport work.
+- API-embedded runtime: faster initial integration, weaker operational boundary and higher API blast radius.
+- Rootless/dedicated host: lower daemon privilege exposure, potential storage/network compatibility cost.
+- Docker default seccomp: balanced compatibility and baseline protection, less tailored than a measured custom profile.
+- No egress: strongest isolation, may break package downloads and normal language tooling.
+- Internal/allowlisted egress: more useful, requires DNS/host/service policy and maintenance.
+
+**Questions for exact approval**
+
+- Which module may create and control containers?
+- Which transport and message format may dispatch jobs and stream results?
+- Which identities/workspaces may execute and mount data?
+- May containers run with any capabilities or must `ALL` be dropped?
+- Which namespace modes are mandatory?
+- Which cgroup controllers and quotas are available and approved?
+- Is Docker default seccomp approved as the baseline?
+- Which host paths, if any, may be mounted, and which paths must be writable?
+- Is network `none`, internal-only, allowlisted egress, or another policy approved?
+- What wall-clock, inactivity, startup, CPU, memory, PID, disk, output, and concurrency limits apply?
+- What stop/removal/reconciliation guarantee applies after success, timeout, cancellation, crash, and restart?
+- Which images and registry/provenance checks are approved?
+- Is Docker rootless mode or a dedicated host required?
+
+No approval is inferred from this document. No security, infrastructure, shared-contract, database, or architecture decision is finalized here.
+
+## 24. Safe verification and implementation status
+
+No repository implementation was changed because no clearly approved, executable small task exists within this boundary:
+
+- ADR-004 explicitly defers Docker implementation.
+- The runtime lacks an approved transport, authorization contract, container policy, and target host.
+- No teammate-owned module can be safely changed without changing shared contracts or architecture.
+
+Safe existing checks performed:
+
+| Command | Why run | Result |
+|---|---|---|
+| `git status --short --branch` | Verify branch and unexpected local changes | `mahak` branch; no modified or untracked files at start |
+| `git remote -v` | Verify repository remote | Correct SLBytes15 remote for fetch/push |
+| `docker version --format '{{json .}}'` | Safely detect Docker CLI/daemon availability | Docker CLI not recognized |
+| `docker info --format '{{json .}}'` | Safely detect Docker daemon availability | Docker CLI not recognized |
+| `node --version` | Confirm runtime tool availability | Node `v22.23.1` |
+| `npm --version` | Confirm package tool availability | npm `12.2.0` |
+| `npm run typecheck` | Run the relevant existing workspace check | Failed: `tsc` unavailable in all typecheck workspaces |
+
+The setup-check script was inspected, not executed, because it can create `.env` and is not required for the documentation-only continuation.
+
+## 25. 23 November blockers and next steps
+
+Blockers:
+
+- Docker CLI/daemon and target Linux host controls are not available or verifiable locally.
+- Execution package, API route, WebSocket server, authorization, persistence, PTY/process code, and cleanup code are absent.
+- Required security and infrastructure decisions lack team approval.
+- Dependencies are not installed, so workspace typechecks cannot run.
+
+Next steps after approval:
+
+1. Decide execution-service boundary and backend/runtime communication contract.
+2. Define authorization and request validation without crossing teammate modules.
+3. Approve privilege, namespace, cgroup, seccomp, filesystem, network, resource, timeout, cleanup, and image policies.
+4. Confirm target Docker host and cgroup/controller support.
+5. Implement one small approved slice in `services/execution/` with focused tests and no shared-contract or infrastructure changes.
+6. Add only verified test and Docker evidence; do not claim security guarantees from container creation alone.
