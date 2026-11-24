@@ -1,8 +1,10 @@
 import React from 'react';
 import Editor from '@monaco-editor/react';
 import { getLanguageFromPath } from '../utils/language.js';
+import { createEditorModelPath } from '../utils/workspaceState.js';
 
 interface MonacoEditorViewProps {
+  workspaceId: string;
   filePath?: string;
   content: string;
   onChangeContent: (newContent: string) => void;
@@ -10,6 +12,7 @@ interface MonacoEditorViewProps {
 }
 
 export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
+  workspaceId,
   filePath,
   content,
   onChangeContent,
@@ -34,7 +37,7 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
         height="100%"
         width="100%"
         theme="vs-dark"
-        path={filePath}
+        path={createEditorModelPath(workspaceId, filePath)}
         language={language}
         value={content}
         onChange={(val) => onChangeContent(val || '')}

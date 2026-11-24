@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import { CloudIde } from './components/CloudIde.js';
-import { Code2, LayoutDashboard, CheckCircle } from 'lucide-react';
+import { Code2, LayoutDashboard } from 'lucide-react';
 
 interface HealthData {
   status: string;
@@ -75,7 +75,7 @@ export function App() {
         </div>
 
         <div className="top-bar-right">
-          <span className="branch-tag">Branch: <code>saransh</code></span>
+          <span className="branch-tag">Local development</span>
         </div>
       </header>
 
@@ -86,7 +86,7 @@ export function App() {
         <main className="main-content">
           <section className="hero">
             <h1>Distributed Cloud IDE Platform</h1>
-            <p>Phase 1 Foundation: Monaco Editor + Mongoose Persistence + Container Sandboxing</p>
+            <p>Cards list repository implementation areas; API health below is checked live.</p>
           </section>
 
           <section className="grid-cards">
@@ -97,10 +97,10 @@ export function App() {
               </div>
               <p>React 19 + Monaco Editor + Tabs</p>
               <ul>
-                <li><CheckCircle size={14} color="#3fb950" /> Monaco Editor integration active</li>
-                <li><CheckCircle size={14} color="#3fb950" /> Multi-file tab switching operational</li>
-                <li><CheckCircle size={14} color="#3fb950" /> Virtualized file tree explorer</li>
-                <li><CheckCircle size={14} color="#3fb950" /> Multi-language syntax highlighting</li>
+                <li>Monaco editor with workspace-specific model paths</li>
+                <li>Multi-file tabs and unsaved-change markers</li>
+                <li>Nested file tree navigation (not virtualized)</li>
+                <li>Configured language mappings and local workers</li>
               </ul>
             </div>
 
@@ -122,9 +122,9 @@ export function App() {
                 )}
               </div>
               <ul>
-                <li><CheckCircle size={14} color="#3fb950" /> Mongoose models (Workspace, File, Job)</li>
-                <li><CheckCircle size={14} color="#3fb950" /> REST APIs: <code>/api/v1/workspaces</code></li>
-                <li><CheckCircle size={14} color="#3fb950" /> Hierarchical file tree builder</li>
+                <li>Workspace, file, and execution-job model modules</li>
+                <li>Workspace and file REST route modules</li>
+                <li>Hierarchical file-tree response code</li>
               </ul>
             </div>
 
@@ -135,10 +135,10 @@ export function App() {
               </div>
               <p>Docker Engine API + cgroups v2</p>
               <ul>
-                <li><CheckCircle size={14} color="#3fb950" /> Ephemeral container manager</li>
-                <li><CheckCircle size={14} color="#3fb950" /> 512MB RAM cap & 1.0 vCPU quota</li>
-                <li><CheckCircle size={14} color="#3fb950" /> Read-only rootfs & non-root UID</li>
-                <li><CheckCircle size={14} color="#3fb950" /> Automatic timeout & cleanup hooks</li>
+                <li>Execution service and container lifecycle modules</li>
+                <li>Resource and filesystem configuration code</li>
+                <li>Runtime timeout and cleanup paths</li>
+                <li>Runtime behavior was not checked in this frontend QA pass</li>
               </ul>
             </div>
           </section>

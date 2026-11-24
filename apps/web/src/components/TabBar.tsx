@@ -33,15 +33,24 @@ export const TabBar: React.FC<TabBarProps> = ({
           <div
             key={tab.path}
             className={`tab-item ${isActive ? 'tab-item-active' : ''}`}
-            onClick={() => onSelectTab(tab.path)}
           >
-            <FileText size={14} className="tab-icon" color="#58a6ff" />
-            <span className="tab-title">{tab.name}</span>
-            {tab.isDirty && <span className="tab-dirty-indicator" title="Unsaved changes" />}
             <button
+              type="button"
+              className="tab-select-btn"
+              onClick={() => onSelectTab(tab.path)}
+              aria-current={isActive ? 'page' : undefined}
+              aria-label={`Open ${tab.name}${tab.isDirty ? ', unsaved changes' : ''}`}
+            >
+              <FileText size={14} className="tab-icon" color="#58a6ff" />
+              <span className="tab-title">{tab.name}</span>
+              {tab.isDirty && <span className="tab-dirty-indicator" aria-hidden="true" title="Unsaved changes" />}
+            </button>
+            <button
+              type="button"
               className="tab-close-btn"
               onClick={(e) => onCloseTab(tab.path, e)}
               title="Close tab"
+              aria-label={`Close ${tab.name} tab`}
             >
               <X size={12} />
             </button>

@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { Terminal as TerminalIcon, RotateCcw, Trash2 } from 'lucide-react';
 import type { BaseSocketMessage, TerminalOutputPayload } from '@cloud-ide/shared';
+import { createTerminalSocketUrl, terminalConnectionTransition } from '../utils/terminalConnection.js';
 
 interface TerminalViewProps {
   workspaceId: string;
@@ -20,30 +21,28 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   const xtermInstanceRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const hasConnectedRef = useRef(false);
 
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<
+    'connecting' | 'reconnecting' | 'connected' | 'disconnected' | 'error' | 'closed'
+  >('disconnected');
 
   const connectWebSocket = () => {
-    if (socketRef.current) {
-      socketRef.current.close();
-    }
-
-    setConnectionStatus('connecting');
+    const previousSocket = socketRef.current;
+    const isReconnect = Boolean(previousSocket) || hasConnectedRef.current;
+    setConnectionStatus((status) => terminalConnectionTransition(status, isReconnect ? 'reconnect' : 'connect'));
+    socketRef.current = null;
+    previousSocket?.close();
     const term = xtermInstanceRef.current;
-    if (term) {
-      term.writeln('\x1b[90mConnecting to sandbox terminal...\x1b[0m');
-    }
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host || 'localhost:5001';
-    const wsUrl = `${protocol}//${host}/ws/terminal?workspaceId=${encodeURIComponent(workspaceId)}`;
 
     try {
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(createTerminalSocketUrl(window.location, workspaceId));
       socketRef.current = ws;
 
       ws.onopen = () => {
-        setConnectionStatus('connected');
+        if (socketRef.current !== ws) return;
+        hasConnectedRef.current = true;
+        setConnectionStatus((status) => terminalConnectionTransition(status, 'open'));
         if (term && fitAddonRef.current) {
           fitAddonRef.current.fit();
           ws.send(JSON.stringify({
@@ -59,6 +58,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       };
 
       ws.onmessage = (event) => {
+        if (socketRef.current !== ws) return;
         try {
           const msg = JSON.parse(event.data) as BaseSocketMessage;
           if (msg.event === 'terminal:output') {
@@ -70,17 +70,21 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         }
       };
 
-      ws.onclose = () => {
-        setConnectionStatus('disconnected');
-        term?.writeln('\r\n\x1b[31mTerminal session disconnected.\x1b[0m');
+      ws.onclose = (event) => {
+        if (socketRef.current !== ws) return;
+        socketRef.current = null;
+        setConnectionStatus((status) => terminalConnectionTransition(status, event.wasClean ? 'dispose' : 'close'));
+        term?.writeln(event.wasClean
+          ? '\r\n\x1b[90mTerminal session closed.\x1b[0m'
+          : '\r\n\x1b[31mTerminal connection lost.\x1b[0m');
       };
 
       ws.onerror = () => {
-        setConnectionStatus('disconnected');
-        term?.writeln('\r\n\x1b[33m(Running in offline terminal preview mode)\x1b[0m\r\n$ ');
+        if (socketRef.current !== ws) return;
+        setConnectionStatus((status) => terminalConnectionTransition(status, 'error'));
       };
     } catch {
-      setConnectionStatus('disconnected');
+      setConnectionStatus((status) => terminalConnectionTransition(status, 'error'));
     }
   };
 
@@ -121,9 +125,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
           timestamp: new Date().toISOString(),
         }));
       } else {
-        // Echo locally in disconnected/offline preview
+        // Echo the edit locally, but state clearly that Enter will not execute it offline.
         if (data === '\r') {
-          term.write('\r\n[sandbox: offline] $ ');
+          term.write('\r\n[not sent: terminal is not connected]\r\n');
         } else if (data === '\x7f') {
           term.write('\b \b');
         } else {
@@ -154,10 +158,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     };
 
     window.addEventListener('resize', handleResize);
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(handleResize);
+    resizeObserver?.observe(terminalRef.current);
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      socketRef.current?.close();
+      resizeObserver?.disconnect();
+      const socket = socketRef.current;
+      socketRef.current = null;
+      socket?.close();
       term.dispose();
     };
   }, [workspaceId]);
@@ -169,19 +180,25 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   return (
     <div className={`terminal-dock ${isMinimized ? 'terminal-dock-minimized' : ''}`}>
       <div className="terminal-dock-header">
-        <div className="terminal-dock-title" onClick={onToggleMinimize}>
+        <button
+          type="button"
+          className="terminal-dock-title"
+          onClick={onToggleMinimize}
+          aria-label={isMinimized ? 'Show terminal' : 'Hide terminal'}
+          aria-expanded={!isMinimized}
+        >
           <TerminalIcon size={14} color="#58a6ff" />
           <span>TERMINAL — {workspaceId}</span>
-          <span className={`terminal-status-pill status-${connectionStatus}`}>
+          <span className={`terminal-status-pill status-${connectionStatus}`} role="status" aria-live="polite">
             {connectionStatus.toUpperCase()}
           </span>
-        </div>
+        </button>
 
         <div className="terminal-dock-actions">
-          <button className="icon-btn" onClick={handleClear} title="Clear Terminal">
+          <button type="button" className="icon-btn" onClick={handleClear} title="Clear Terminal" aria-label="Clear terminal">
             <Trash2 size={13} />
           </button>
-          <button className="icon-btn" onClick={connectWebSocket} title="Reconnect Terminal">
+          <button type="button" className="icon-btn" onClick={connectWebSocket} title="Reconnect Terminal" aria-label="Reconnect terminal">
             <RotateCcw size={13} />
           </button>
         </div>

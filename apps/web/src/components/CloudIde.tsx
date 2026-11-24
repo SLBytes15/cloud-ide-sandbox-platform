@@ -6,110 +6,139 @@ import {
   mockFileNodes,
 } from '@cloud-ide/shared';
 import { FileTreeExplorer } from './FileTreeExplorer.js';
-import { TabBar, OpenTab } from './TabBar.js';
+import { TabBar } from './TabBar.js';
 import { MonacoEditorView } from './MonacoEditorView.js';
 import { TerminalView } from './TerminalView.js';
 import { Code2, Play, Save, Terminal as TerminalIcon, Cpu } from 'lucide-react';
 import { getLanguageFromPath } from '../utils/language.js';
 import { executeWasmFallback } from '../utils/wasmeval.js';
+import {
+  createWorkspaceEditorState,
+  removeFileTreeItem,
+  replaceWorkspaceFiles,
+  updateWorkspaceEditorState,
+} from '../utils/workspaceState.js';
+
+type WorkspaceFileLoadState =
+  | { status: 'loading' }
+  | { status: 'ready' }
+  | { status: 'error'; message: string };
 
 export const CloudIde: React.FC = () => {
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>(mockWorkspaceSummaries);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(mockWorkspaceSummaries[0]?.id || '');
-  const [fileTree, setFileTree] = useState<FileTreeItem[]>(mockFileTree);
-  const [fileBuffers, setFileBuffers] = useState<Map<string, string>>(
-    new Map(mockFileNodes.map((f) => [f.path, f.content || '']))
-  );
-  const [openTabs, setOpenTabs] = useState<OpenTab[]>([
-    { id: '1', name: 'index.js', path: '/src/index.js' },
-    { id: '2', name: 'README.md', path: '/README.md' },
-  ]);
-  const [activeTabPath, setActiveTabPath] = useState<string>('/src/index.js');
-  const [isSaving, setIsSaving] = useState(false);
+  const [workspaceEditors, setWorkspaceEditors] = useState(() => new Map([
+    [mockWorkspaceSummaries[0]?.id || '', createWorkspaceEditorState(
+      mockFileTree,
+      mockFileNodes,
+      [
+        { id: '1', name: 'index.js', path: '/src/index.js' },
+        { id: '2', name: 'README.md', path: '/README.md' },
+      ],
+      '/src/index.js',
+    )],
+  ]));
+  const [fileLoadStates, setFileLoadStates] = useState<Record<string, WorkspaceFileLoadState>>({});
+  const [fileLoadAttempt, setFileLoadAttempt] = useState(0);
   const [statusMessage, setStatusMessage] = useState<string>('Ready');
   const [showTerminal, setShowTerminal] = useState<boolean>(true);
 
   // Load workspaces from backend API on mount
-  const fetchWorkspaces = async () => {
-    try {
-      const res = await fetch('/api/v1/workspaces');
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          setWorkspaces(json.data);
-          if (!activeWorkspaceId) {
-            setActiveWorkspaceId(json.data[0].id);
-          }
-        }
-      }
-    } catch {
-      // Offline fallback already loaded via mockWorkspaceSummaries
-    }
-  };
-
-  // Load workspace files when active workspace changes
-  const fetchWorkspaceFiles = async (workspaceId: string) => {
-    try {
-      const res = await fetch(`/api/v1/workspaces/${workspaceId}/files`);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          setFileTree(json.data.tree || []);
-          if (Array.isArray(json.data.files)) {
-            const newBuffers = new Map<string, string>();
-            for (const f of json.data.files as FileNode[]) {
-              newBuffers.set(f.path, f.content || '');
-            }
-            setFileBuffers(newBuffers);
-          }
-        }
-      }
-    } catch {
-      // Offline fallback in state
-    }
-  };
-
   useEffect(() => {
-    fetchWorkspaces();
+    let cancelled = false;
+    const fetchWorkspaces = async () => {
+      try {
+        const res = await fetch('/api/v1/workspaces');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!cancelled && json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setWorkspaces(json.data);
+          setActiveWorkspaceId((currentId) =>
+            json.data.some((workspace: WorkspaceSummary) => workspace.id === currentId)
+              ? currentId
+              : json.data[0].id,
+          );
+        }
+      } catch {
+        // Sample workspaces remain available, and file loading reports API failure below.
+      }
+    };
+    void fetchWorkspaces();
+    return () => { cancelled = true; };
   }, []);
 
+  // Load workspace files when active workspace changes
   useEffect(() => {
-    if (activeWorkspaceId) {
-      fetchWorkspaceFiles(activeWorkspaceId);
-    }
-  }, [activeWorkspaceId]);
+    if (!activeWorkspaceId) return;
+    let cancelled = false;
+    const workspaceId = activeWorkspaceId;
+    setFileLoadStates((prev) => ({ ...prev, [workspaceId]: { status: 'loading' } }));
+
+    const fetchWorkspaceFiles = async () => {
+      try {
+        const res = await fetch(`/api/v1/workspaces/${workspaceId}/files`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!json.success || !json.data) throw new Error(json.message || 'Unexpected workspace response');
+        if (cancelled) return;
+        const files = Array.isArray(json.data.files) ? json.data.files as FileNode[] : [];
+        setWorkspaceEditors((prev) => updateWorkspaceEditorState(prev, workspaceId, (state) =>
+          replaceWorkspaceFiles(state, Array.isArray(json.data.tree) ? json.data.tree : [], files),
+        ));
+        setFileLoadStates((prev) => ({ ...prev, [workspaceId]: { status: 'ready' } }));
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        setFileLoadStates((prev) => ({
+          ...prev,
+          [workspaceId]: { status: 'error', message },
+        }));
+      }
+    };
+
+    void fetchWorkspaceFiles();
+    return () => { cancelled = true; };
+  }, [activeWorkspaceId, fileLoadAttempt]);
+
+  const activeEditor = workspaceEditors.get(activeWorkspaceId) || createWorkspaceEditorState([], []);
+  const { fileTree, fileBuffers, openTabs, activeTabPath } = activeEditor;
+  const fileLoadState = fileLoadStates[activeWorkspaceId];
 
   const handleSelectFile = (path: string) => {
-    const existing = openTabs.find((t) => t.path === path);
-    if (!existing) {
+    setWorkspaceEditors((prev) => updateWorkspaceEditorState(prev, activeWorkspaceId, (state) => {
+      const existing = state.openTabs.some((tab) => tab.path === path);
       const name = path.split('/').pop() || path;
-      setOpenTabs((prev) => [...prev, { id: String(Date.now()), name, path }]);
-    }
-    setActiveTabPath(path);
+      return {
+        ...state,
+        openTabs: existing ? state.openTabs : [...state.openTabs, { id: `${activeWorkspaceId}:${path}`, name, path }],
+        activeTabPath: path,
+      };
+    }));
   };
 
   const handleCloseTab = (path: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const remaining = openTabs.filter((t) => t.path !== path);
-    setOpenTabs(remaining);
-    if (activeTabPath === path && remaining.length > 0) {
-      setActiveTabPath(remaining[remaining.length - 1].path);
-    } else if (remaining.length === 0) {
-      setActiveTabPath('');
-    }
+    setWorkspaceEditors((prev) => updateWorkspaceEditorState(prev, activeWorkspaceId, (state) => {
+      const remaining = state.openTabs.filter((tab) => tab.path !== path);
+      return {
+        ...state,
+        openTabs: remaining,
+        activeTabPath: state.activeTabPath === path
+          ? (remaining[remaining.length - 1]?.path || '')
+          : state.activeTabPath,
+      };
+    }));
   };
 
   const handleContentChange = (newContent: string) => {
     if (!activeTabPath) return;
-    setFileBuffers((prev) => {
-      const next = new Map(prev);
-      next.set(activeTabPath, newContent);
-      return next;
-    });
-
-    setOpenTabs((prev) =>
-      prev.map((tab) => (tab.path === activeTabPath ? { ...tab, isDirty: true } : tab))
-    );
+    setWorkspaceEditors((prev) => updateWorkspaceEditorState(prev, activeWorkspaceId, (state) => ({
+      ...state,
+      fileBuffers: new Map(state.fileBuffers).set(activeTabPath, newContent),
+      openTabs: state.openTabs.map((tab) =>
+        tab.path === activeTabPath ? { ...tab, isDirty: true } : tab,
+      ),
+    })));
   };
 
   const handleExecuteScript = async () => {
@@ -143,26 +172,16 @@ export const CloudIde: React.FC = () => {
         setStatusMessage('Execution failed (server error)');
       }
     } catch {
-      setStatusMessage('Offline execution simulated');
+      setStatusMessage('Execution service unavailable; no execution result was received.');
     }
   };
 
-  const handleSaveActiveFile = async () => {
+  const handleSaveActiveFile = () => {
     if (!activeTabPath) return;
-    setIsSaving(true);
-    setStatusMessage(`Saving ${activeTabPath}...`);
-    try {
-      // In-memory buffer is already up-to-date
-      setOpenTabs((prev) =>
-        prev.map((tab) => (tab.path === activeTabPath ? { ...tab, isDirty: false } : tab))
-      );
-      setStatusMessage(`Saved ${activeTabPath}`);
-    } finally {
-      setIsSaving(false);
-    }
+    setStatusMessage(`Not saved: ${activeTabPath} is only stored in this browser session.`);
   };
 
-  const handleCreateFile = async (name: string, isDirectory: boolean) => {
+  const handleCreateFile = (name: string, isDirectory: boolean) => {
     const cleanName = name.trim();
     const path = `/${cleanName}`;
     const newItem: FileTreeItem = {
@@ -173,16 +192,34 @@ export const CloudIde: React.FC = () => {
       ...(isDirectory ? { children: [] } : {}),
     };
 
-    setFileTree((prev) => [...prev, newItem]);
-    if (!isDirectory) {
-      setFileBuffers((prev) => {
-        const next = new Map(prev);
-        next.set(path, '');
-        return next;
-      });
-      handleSelectFile(path);
-    }
-    setStatusMessage(`Created ${path}`);
+    setWorkspaceEditors((prev) => updateWorkspaceEditorState(prev, activeWorkspaceId, (state) => ({
+      ...state,
+      fileTree: [...state.fileTree, newItem],
+      fileBuffers: isDirectory ? state.fileBuffers : new Map(state.fileBuffers).set(path, ''),
+      openTabs: isDirectory || state.openTabs.some((tab) => tab.path === path)
+        ? state.openTabs
+        : [...state.openTabs, { id: `${activeWorkspaceId}:${path}`, name: cleanName, path, isDirty: true }],
+      activeTabPath: isDirectory ? state.activeTabPath : path,
+    })));
+    setStatusMessage(`Created ${path} in the local editor state; it was not sent to the backend.`);
+  };
+
+  const handleDeleteFile = (path: string) => {
+    setWorkspaceEditors((prev) => updateWorkspaceEditorState(prev, activeWorkspaceId, (state) => {
+      const openTabs = state.openTabs.filter((tab) => tab.path !== path);
+      const fileBuffers = new Map(state.fileBuffers);
+      fileBuffers.delete(path);
+      return {
+        ...state,
+        fileTree: removeFileTreeItem(state.fileTree, path),
+        fileBuffers,
+        openTabs,
+        activeTabPath: state.activeTabPath === path
+          ? (openTabs[openTabs.length - 1]?.path || '')
+          : state.activeTabPath,
+      };
+    }));
+    setStatusMessage(`Removed ${path} from the local editor state; it was not sent to the backend.`);
   };
 
   const handleWasmOfflineRun = async () => {
@@ -205,8 +242,9 @@ export const CloudIde: React.FC = () => {
       <div className="ide-toolbar">
         <div className="toolbar-left">
           <div className="workspace-selector-wrapper">
-            <span className="toolbar-label">Workspace:</span>
+            <label className="toolbar-label" htmlFor="workspace-select">Workspace:</label>
             <select
+              id="workspace-select"
               className="workspace-select"
               value={activeWorkspaceId}
               onChange={(e) => setActiveWorkspaceId(e.target.value)}
@@ -230,6 +268,7 @@ export const CloudIde: React.FC = () => {
             className="toolbar-btn primary-btn"
             onClick={handleWasmOfflineRun}
             title="Instant Offline Client-side WebAssembly Execution"
+            aria-label="Run WebAssembly offline demo"
           >
             <Cpu size={14} color="#bc8cff" />
             <span>WASM Offline</span>
@@ -238,6 +277,7 @@ export const CloudIde: React.FC = () => {
             className="toolbar-btn primary-btn"
             onClick={() => setShowTerminal((prev) => !prev)}
             title="Toggle Terminal Dock"
+            aria-label="Toggle terminal dock"
           >
             <TerminalIcon size={14} />
             <span>Terminal</span>
@@ -245,8 +285,9 @@ export const CloudIde: React.FC = () => {
           <button
             className="toolbar-btn primary-btn"
             onClick={handleSaveActiveFile}
-            disabled={!activeTabPath || isSaving}
+            disabled={!activeTabPath}
             title="Save Buffer (Ctrl+S / Cmd+S)"
+            aria-label="Save active file"
           >
             <Save size={14} />
             <span>Save</span>
@@ -255,6 +296,7 @@ export const CloudIde: React.FC = () => {
             className="toolbar-btn success-btn"
             title="Execute Code in Ephemeral Sandbox"
             onClick={handleExecuteScript}
+            aria-label="Run active file"
           >
             <Play size={14} />
             <span>Run</span>
@@ -269,13 +311,12 @@ export const CloudIde: React.FC = () => {
           <FileTreeExplorer
             items={fileTree}
             activeFilePath={activeTabPath}
+            isLoading={fileLoadState?.status === 'loading'}
+            loadError={fileLoadState?.status === 'error' ? fileLoadState.message : undefined}
+            onRetry={() => setFileLoadAttempt((attempt) => attempt + 1)}
             onSelectFile={handleSelectFile}
             onCreateFile={handleCreateFile}
-            onDeleteFile={(path) => {
-              setFileTree((prev) => prev.filter((item) => item.path !== path));
-              setOpenTabs((prev) => prev.filter((tab) => tab.path !== path));
-              if (activeTabPath === path) setActiveTabPath('');
-            }}
+            onDeleteFile={handleDeleteFile}
           />
         </aside>
 
@@ -284,12 +325,13 @@ export const CloudIde: React.FC = () => {
           <TabBar
             tabs={openTabs}
             activeTabPath={activeTabPath}
-            onSelectTab={setActiveTabPath}
+            onSelectTab={handleSelectFile}
             onCloseTab={handleCloseTab}
           />
 
           <div className="editor-container">
             <MonacoEditorView
+              workspaceId={activeWorkspaceId}
               filePath={activeTabPath}
               content={activeContent}
               onChangeContent={handleContentChange}
@@ -307,7 +349,7 @@ export const CloudIde: React.FC = () => {
       </div>
 
       {/* Bottom Status Bar */}
-      <footer className="ide-statusbar">
+      <footer className="ide-statusbar" role="status" aria-live="polite">
         <div className="statusbar-left">
           <span className="status-item">
             <Code2 size={13} style={{ marginRight: 4 }} />
@@ -318,7 +360,7 @@ export const CloudIde: React.FC = () => {
         </div>
         <div className="statusbar-right">
           <span className="status-item">Zaalima Cloud IDE v0.1.0</span>
-          <span className="status-item">Sandbox: Ready</span>
+          <span className="status-item">Execution: unverified</span>
         </div>
       </footer>
     </div>
