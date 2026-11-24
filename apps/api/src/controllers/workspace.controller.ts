@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Workspace } from '../models/workspace.model.js';
 import { FileModel } from '../models/file.model.js';
+import { deleteFallbackFilesByWorkspace } from './file.controller.js';
 import { validateCreateWorkspaceDTO } from '../utils/workspaceValidation.js';
 import { ValidationError, NotFoundError, BadRequestError } from '../utils/errors.js';
 import { sendSuccess } from '../utils/apiResponse.js';
@@ -194,7 +195,8 @@ export async function deleteWorkspace(req: Request, res: Response, next: NextFun
       if (!existed) {
         throw new NotFoundError(`Workspace with ID ${id} not found`);
       }
-      return sendSuccess(res, { deleted: true }, 'Workspace deleted from fallback store');
+      deleteFallbackFilesByWorkspace(id);
+      return sendSuccess(res, { deleted: true, id }, 'Workspace and associated files deleted from fallback store');
     }
 
     const deleted = await Workspace.findByIdAndDelete(id);

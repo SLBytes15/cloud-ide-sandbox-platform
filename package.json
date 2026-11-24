@@ -5,8 +5,8 @@
   "description": "Distributed Cloud IDE & Sandboxed Code Execution Platform - Zaalima Project 2",
   "workspaces": [
     "packages/*",
-    "apps/*",
-    "services/*"
+    "services/*",
+    "apps/*"
   ],
   "engines": {
     "node": ">=20.0.0",
