@@ -158,8 +158,13 @@
   color: #ffffff;
 }
 
-.success-btn:hover {
+.success-btn:hover:not(:disabled) {
   background-color: #2ea043;
+}
+
+.toolbar-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* IDE Body (Sidebar + Editor) */
@@ -450,6 +455,121 @@
   color: #8b949e;
 }
 
+/* One-shot execution results are separate from the interactive terminal. */
+.execution-panel {
+  flex: 0 0 180px;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #0d1117;
+  border-top: 1px solid #30363d;
+  color: #c9d1d9;
+}
+
+.execution-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 0.65rem 0 0.75rem;
+  background: #161b22;
+  border-bottom: 1px solid #21262d;
+  font-size: 0.75rem;
+}
+
+.execution-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.execution-source {
+  overflow: hidden;
+  color: #8b949e;
+  font-family: monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-status-pill {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid #484f58;
+  border-radius: 4px;
+  color: #8b949e;
+  font-size: 0.65rem;
+}
+
+.execution-status-pending,
+.execution-status-running {
+  border-color: #9e6a03;
+  background: #d2992233;
+  color: #e3b341;
+}
+
+.execution-status-completed {
+  border-color: #23863666;
+  background: #23863633;
+  color: #3fb950;
+}
+
+.execution-status-failed,
+.execution-status-timeout,
+.execution-status-request-error {
+  border-color: #f8514966;
+  background: #f8514933;
+  color: #ff7b72;
+}
+
+.execution-panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.35rem 0.75rem;
+}
+
+.execution-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.85rem;
+  margin-bottom: 0.25rem;
+  color: #8b949e;
+  font-size: 0.7rem;
+}
+
+.execution-output {
+  margin: 0;
+  color: #c9d1d9;
+  font: 0.78rem/1.45 'Cascadia Code', Consolas, monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.execution-output-error,
+.execution-panel-error {
+  color: #ff7b72;
+}
+
+.execution-panel-message {
+  flex: 1;
+  overflow: auto;
+  padding: 0.55rem 0.75rem;
+  color: #8b949e;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.execution-runtime-note {
+  margin: 0;
+  padding: 0.2rem 0.75rem;
+  border-top: 1px solid #21262d;
+  color: #e3b341;
+  font-size: 0.67rem;
+}
+
 /* Terminal Dock */
 .terminal-dock {
   height: 220px;
@@ -732,6 +852,15 @@
   .terminal-dock {
     height: 160px;
     min-height: 120px;
+  }
+
+  .execution-panel {
+    flex-basis: 145px;
+    min-height: 110px;
+  }
+
+  .execution-source {
+    display: none;
   }
 
   .ide-statusbar {

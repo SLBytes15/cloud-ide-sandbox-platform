@@ -9,9 +9,11 @@ import { FileTreeExplorer } from './FileTreeExplorer.js';
 import { TabBar } from './TabBar.js';
 import { MonacoEditorView } from './MonacoEditorView.js';
 import { TerminalView } from './TerminalView.js';
+import { ExecutionPanel } from './ExecutionPanel.js';
 import { Code2, Play, Save, Terminal as TerminalIcon, Cpu } from 'lucide-react';
 import { getLanguageFromPath } from '../utils/language.js';
 import { executeWasmFallback } from '../utils/wasmeval.js';
+import type { ExecutionUiStatus } from '../utils/executionState.js';
 import {
   createWorkspaceEditorState,
   removeFileTreeItem,
@@ -42,6 +44,8 @@ export const CloudIde: React.FC = () => {
   const [fileLoadAttempt, setFileLoadAttempt] = useState(0);
   const [statusMessage, setStatusMessage] = useState<string>('Ready');
   const [showTerminal, setShowTerminal] = useState<boolean>(true);
+  const [showExecutionPanel, setShowExecutionPanel] = useState(false);
+  const executionStatus: ExecutionUiStatus = 'idle';
 
   // Load workspaces from backend API on mount
   useEffect(() => {
@@ -139,41 +143,6 @@ export const CloudIde: React.FC = () => {
         tab.path === activeTabPath ? { ...tab, isDirty: true } : tab,
       ),
     })));
-  };
-
-  const handleExecuteScript = async () => {
-    if (!activeTabPath || !activeContent.trim()) {
-      setStatusMessage('No code to execute in active buffer');
-      return;
-    }
-
-    setStatusMessage(`Executing ${activeTabPath} in ${activeWorkspace?.runtime || 'node'} sandbox...`);
-    setShowTerminal(true);
-
-    try {
-      const res = await fetch(`/api/v1/workspaces/${activeWorkspaceId}/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: activeContent,
-          runtime: activeWorkspace?.runtime || 'node',
-        }),
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          const { durationMs, exitCode, status } = json.data;
-          setStatusMessage(`Completed in ${durationMs}ms (exit code ${exitCode}) [${status}]`);
-        } else {
-          setStatusMessage('Execution completed');
-        }
-      } else {
-        setStatusMessage('Execution failed (server error)');
-      }
-    } catch {
-      setStatusMessage('Execution service unavailable; no execution result was received.');
-    }
   };
 
   const handleSaveActiveFile = () => {
@@ -284,6 +253,16 @@ export const CloudIde: React.FC = () => {
           </button>
           <button
             className="toolbar-btn primary-btn"
+            onClick={() => setShowExecutionPanel((prev) => !prev)}
+            title="Show execution status and contract readiness"
+            aria-expanded={showExecutionPanel}
+            aria-label="Toggle execution panel"
+          >
+            <Play size={14} />
+            <span>Execution</span>
+          </button>
+          <button
+            className="toolbar-btn primary-btn"
             onClick={handleSaveActiveFile}
             disabled={!activeTabPath}
             title="Save Buffer (Ctrl+S / Cmd+S)"
@@ -294,9 +273,9 @@ export const CloudIde: React.FC = () => {
           </button>
           <button
             className="toolbar-btn success-btn"
-            title="Execute Code in Ephemeral Sandbox"
-            onClick={handleExecuteScript}
-            aria-label="Run active file"
+            title="Disabled until the execution API contract and isolated runtime are agreed"
+            disabled
+            aria-label="Run active file (disabled: execution contract pending)"
           >
             <Play size={14} />
             <span>Run</span>
@@ -338,6 +317,15 @@ export const CloudIde: React.FC = () => {
             />
           </div>
 
+          {showExecutionPanel && (
+            <ExecutionPanel
+              status={executionStatus}
+              workspaceId={activeWorkspaceId}
+              filePath={activeTabPath || 'No file selected'}
+              onClose={() => setShowExecutionPanel(false)}
+            />
+          )}
+
           {/* Docked Interactive Terminal */}
           {showTerminal && (
             <TerminalView
@@ -360,7 +348,7 @@ export const CloudIde: React.FC = () => {
         </div>
         <div className="statusbar-right">
           <span className="status-item">Zaalima Cloud IDE v0.1.0</span>
-          <span className="status-item">Execution: unverified</span>
+          <span className="status-item">Execution: contract pending</span>
         </div>
       </footer>
     </div>

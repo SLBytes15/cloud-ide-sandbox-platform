@@ -11,6 +11,10 @@ import {
   createTerminalSocketUrl,
   terminalConnectionTransition,
 } from '../src/utils/terminalConnection.js';
+import {
+  getExecutionOutputSections,
+  getExecutionStatusLabel,
+} from '../src/utils/executionState.js';
 
 test('workspace buffers and tabs remain isolated for identical paths', () => {
   let states = new Map([
@@ -96,4 +100,25 @@ test('terminal lifecycle does not report a closed or failed socket as connected'
   assert.equal(terminalConnectionTransition(status, 'close'), 'error');
   assert.equal(terminalConnectionTransition('connected', 'disconnect'), 'disconnected');
   assert.equal(terminalConnectionTransition('connected', 'dispose'), 'closed');
+});
+
+test('execution panel labels only states supported by the shared job model', () => {
+  assert.equal(getExecutionStatusLabel('idle'), 'Idle');
+  assert.equal(getExecutionStatusLabel('pending'), 'Pending');
+  assert.equal(getExecutionStatusLabel('running'), 'Running');
+  assert.equal(getExecutionStatusLabel('completed'), 'Completed');
+  assert.equal(getExecutionStatusLabel('failed'), 'Failed');
+  assert.equal(getExecutionStatusLabel('timeout'), 'Timed out');
+  assert.equal(getExecutionStatusLabel('request-error'), 'Unavailable');
+});
+
+test('execution output avoids rendering identical error text twice', () => {
+  assert.deepEqual(
+    getExecutionOutputSections({ status: 'failed', output: 'SyntaxError', error: 'SyntaxError', exitCode: 1, durationMs: 2 }),
+    { output: 'SyntaxError', error: '' },
+  );
+  assert.deepEqual(
+    getExecutionOutputSections({ status: 'failed', output: 'before error', error: 'ReferenceError', exitCode: 1, durationMs: 2 }),
+    { output: 'before error', error: 'ReferenceError' },
+  );
 });
