@@ -26,9 +26,16 @@ Primary evidence:
 - `apps/web/src/App.tsx`
 - `package.json`
 
+## Finding classification
+
+1. **Verified from source/config:** repository files, package dependencies, Express routes, shared contracts, and documented architecture/settings.
+2. **Not functionally tested because Docker was unavailable:** container lifecycle, namespace/cgroup enforcement, network isolation, streams, resource limits, timeout, and cleanup.
+3. **Design risks requiring approval:** image, non-root identity, filesystem/mount policy, CPU/memory/PID/storage limits, network policy, capabilities/seccomp, secrets, output bounds, and cleanup.
+4. **Implementation still missing:** Docker client, execution endpoint, container lifecycle, process/PTY streams, timeout orchestration, authorization, persistence, and cleanup.
+
 ## 2. Executive conclusion
 
-The execution boundary is **not implemented**. The repository contains planning documentation and shared TypeScript contracts, but no Docker lifecycle code, process runner, PTY integration, WebSocket execution server, container cleanup code, or runtime test suite.
+The Docker/container execution boundary is **not implemented**. The repository contains planning documentation, shared TypeScript contracts, and a small environment-independent runtime orchestration foundation, but no Docker lifecycle code, process runner, PTY integration, WebSocket execution server, container cleanup implementation, or Docker integration test suite.
 
 The repository should not be described as providing Docker or untrusted-code isolation until an execution service exists and is verified in a dedicated environment. The only enforceable result in the current state is that no execution route or runtime control path is present in the inspected API.
 
@@ -94,14 +101,15 @@ The following values are proposed in documentation only unless marked as source-
 | Orphan detection/recovery | Not implemented | No leases, sweeper, or orphan listing | No evidence |
 | Rapid/long output | No bounded-output implementation | Shared `output?: string` is a data type only | No evidence |
 
-No safe process lifecycle tests were added because the reviewed repository has no runtime implementation to test. Adding tests that only assert missing files or documentation would not increase security evidence.
+An environment-independent runtime foundation was added under `services/execution`. Its fake-adapter tests cover request validation, job-state transitions, timeout, success/failure, and cleanup invocation. They do not start Docker or establish container security.
 
 ## 6. Safe resource validation
 
 ### Configuration/inspection
 
-- `docker --version` was run safely.
-- Docker CLI is not installed or available in this environment.
+- `docker version` was run safely.
+- Exact diagnostic: PowerShell reports `docker : The term 'docker' is not recognized as the name of a cmdlet, function, script file, or operable program.`
+- This establishes CLI-missing status only; daemon availability could not be tested because the CLI is unavailable.
 - No Docker daemon inspection, container listing, image pulling, or container creation was performed.
 - No resource-limit or container-security options were available to inspect.
 
@@ -109,8 +117,9 @@ No safe process lifecycle tests were added because the reviewed repository has n
 
 - `npm run typecheck`: passed after dependencies were restored.
 - `npm run build`: passed.
-- `npm test`: could not run because no `test` script exists.
-- No runtime test suite exists for execution lifecycle or cleanup.
+- Root `npm test`: could not run because no root `test` script exists.
+- `npm test --workspace=@cloud-ide/execution`: passed 6 fake-adapter tests.
+- Docker lifecycle, container cleanup, and isolation test suites do not exist and remain blocked.
 
 ### Adversarial tests
 
@@ -135,7 +144,7 @@ Not performed. Fork bombs, OOM attacks, escape payloads, network traversal, priv
 | Acceptance item | Status | Evidence |
 |---|---|---|
 | Security claims map to code/config/evidence | Partially met | Claims are classified by source evidence or unavailable runtime evidence |
-| Cleanup checked | Blocked | No runtime implementation or Docker daemon is available |
+| Cleanup orchestration checked | Partially met | Fake-adapter success/failure/timeout tests pass; Docker/container cleanup remains blocked |
 | No unsafe experiments | Met | Only CLI availability and source/config inspection were performed |
 | No unapproved policy changes | Met | No architecture, security, or runtime policy was changed |
 | Work on `mahak` | Met | Review performed on `mahak` |
@@ -158,10 +167,11 @@ Before execution code is considered secure:
 |---|---|
 | `git branch --show-current` | `mahak` |
 | `git status --short --branch` | `## mahak...origin/mahak` |
-| `docker --version` | Docker CLI not recognized |
+| `docker version` | NOT RUN - exact diagnostic: Docker CLI not recognized by PowerShell |
 | `npm install` | Completed; 181 packages added |
 | `npm run typecheck` | Passed |
 | `npm run build` | Passed |
-| `npm test` | Failed: no `test` script exists |
+| Root `npm test` | NOT RUN - no root `test` script exists |
+| `npm test --workspace=@cloud-ide/execution` | Passed - 6 fake-adapter tests |
 
 No commit or push was created. The user must perform Git review and any push/pull-request steps themselves.

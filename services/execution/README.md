@@ -14,3 +14,28 @@ In subsequent phases, this service will be responsible for:
    - Read-only root filesystems and disabled network egress by default for untrusted code execution.
 
 *Note: Per architecture specifications, Docker execution is decoupled from initial setup and will be implemented in future development milestones.*
+
+## Environment-independent runtime foundation
+
+The package in this directory now contains a small, testable runtime orchestration foundation:
+
+- validated execution request data;
+- uniquely identified job records;
+- pending/running/completed/failed/timeout state transitions;
+- a `RuntimeAdapter` interface for future Docker/process implementations;
+- wall-clock timeout orchestration;
+- bounded stdout/stderr capture;
+- cleanup invocation after success and failure.
+
+This foundation does **not** execute code, start Docker containers, create namespaces/cgroups, mount filesystems, or provide network isolation.
+
+## Test status
+
+The Node test suite uses explicit fake adapters:
+
+- fake-adapter success;
+- fake-adapter failure;
+- fake-adapter timeout and abort;
+- fake-adapter cleanup assertions.
+
+These tests verify orchestration only. They are **not Docker integration tests** and do not demonstrate sandbox security.

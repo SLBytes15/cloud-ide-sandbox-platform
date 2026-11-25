@@ -13,11 +13,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@cloud-ide/shared": "^0.1.0"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
