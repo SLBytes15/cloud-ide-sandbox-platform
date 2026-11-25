@@ -76,3 +76,7 @@ class Database {
 }
 
 export const db = new Database();
+
+export function isDatabaseConnected(): boolean {
+  return db.getStatus() === 'connected';
+}
