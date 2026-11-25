@@ -6,7 +6,11 @@ import { isDatabaseConnected } from '../config/database.js';
 import type { FileNode, FileTreeItem } from '@cloud-ide/shared';
 
 // In-memory fallback cache for files
-const inMemoryFiles = new Map<string, FileNode[]>();
+export const inMemoryFiles = new Map<string, FileNode[]>();
+
+export function deleteFallbackFilesByWorkspace(workspaceId: string): void {
+  inMemoryFiles.delete(workspaceId);
+}
 
 export function buildFileTree(files: Array<{ id: string; name: string; path: string; type: 'file' | 'directory'; parentId?: string | null }>): FileTreeItem[] {
   const itemMap = new Map<string, FileTreeItem>();
