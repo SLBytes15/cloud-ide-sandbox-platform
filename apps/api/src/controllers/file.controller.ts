@@ -3,6 +3,7 @@ import { FileModel } from '../models/file.model.js';
 import { NotFoundError, BadRequestError, ConflictError } from '../utils/errors.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { isDatabaseConnected } from '../config/database.js';
+import { normalizeAndValidatePath } from '../utils/pathSecurity.js';
 import type { FileNode, FileTreeItem } from '@cloud-ide/shared';
 
 // In-memory fallback cache for files
@@ -85,11 +86,21 @@ export async function createFile(req: Request, res: Response, next: NextFunction
     if (!name || typeof name !== 'string') throw new BadRequestError('File name is required');
     if (!path || typeof path !== 'string') throw new BadRequestError('File path is required');
 
-    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    const pathValidation = normalizeAndValidatePath(path);
+    if (!pathValidation.valid) {
+      throw new BadRequestError(pathValidation.error, { code: pathValidation.code });
+    }
+
+    const cleanPath = pathValidation.path;
     const cleanContent = typeof content === 'string' ? content : '';
     const size = Buffer.byteLength(cleanContent, 'utf8');
 
     if (!isDatabaseConnected()) {
+      const existing = inMemoryFiles.get(workspaceId) || [];
+      if (existing.some((f) => f.path === cleanPath)) {
+        throw new ConflictError(`File or directory at path "${cleanPath}" already exists`);
+      }
+
       const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const newFile: FileNode = {
         id: fileId,
@@ -104,7 +115,6 @@ export async function createFile(req: Request, res: Response, next: NextFunction
         updatedAt: new Date().toISOString(),
       };
 
-      const existing = inMemoryFiles.get(workspaceId) || [];
       existing.push(newFile);
       inMemoryFiles.set(workspaceId, existing);
       return sendSuccess(res, newFile, 'File created in fallback store', 201);
@@ -241,11 +251,14 @@ export async function deleteFile(req: Request, res: Response, next: NextFunction
 
     if (!isDatabaseConnected()) {
       for (const [wsId, list] of inMemoryFiles.entries()) {
-        const idx = list.findIndex((f) => f.id === fileId);
-        if (idx !== -1) {
-          list.splice(idx, 1);
-          inMemoryFiles.set(wsId, list);
-          return sendSuccess(res, { deleted: true, fileId });
+        const target = list.find((f) => f.id === fileId);
+        if (target) {
+          // If directory, purge target and all descendant files matching prefix
+          const updated = target.type === 'directory'
+            ? list.filter((f) => f.id !== fileId && !f.path.startsWith(`${target.path}/`))
+            : list.filter((f) => f.id !== fileId);
+          inMemoryFiles.set(wsId, updated);
+          return sendSuccess(res, { deleted: true, id: fileId }, 'File deleted successfully');
         }
       }
       throw new NotFoundError(`File with ID ${fileId} not found`);

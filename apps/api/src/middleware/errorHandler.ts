@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
 import { sendError } from '../utils/apiResponse.js';
-import { ApiError } from '../utils/errors.js';
 
 export function errorHandler(
   err: Error & { statusCode?: number; code?: string; details?: unknown; status?: number; value?: unknown; errors?: unknown },
