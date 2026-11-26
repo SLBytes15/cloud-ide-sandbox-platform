@@ -13,6 +13,8 @@ import {
 } from '../src/utils/terminalConnection.js';
 import {
   getExecutionOutputSections,
+  hasExecutionOutput,
+  adaptExecutionJob,
   getExecutionStatusLabel,
 } from '../src/utils/executionState.js';
 
@@ -121,4 +123,24 @@ test('execution output avoids rendering identical error text twice', () => {
     getExecutionOutputSections({ status: 'failed', output: 'before error', error: 'ReferenceError', exitCode: 1, durationMs: 2 }),
     { output: 'before error', error: 'ReferenceError' },
   );
+});
+
+test('execution empty state appears only when output and error are both empty', () => {
+  assert.equal(hasExecutionOutput({ status: 'completed', output: '', exitCode: 0, durationMs: 1 }), false);
+  assert.equal(hasExecutionOutput({ status: 'failed', output: '', error: 'SyntaxError', exitCode: 1, durationMs: 1 }), true);
+});
+
+test('shared execution jobs adapt into the panel without inventing pending results', () => {
+  const pendingFixture = {
+    id: 'job-1', workspaceId: 'ws-1', command: 'node /src/index.js', status: 'pending', createdAt: '2026-11-26T00:00:00.000Z',
+  };
+  assert.deepEqual(adaptExecutionJob(pendingFixture), { status: 'pending' });
+
+  const failedFixture = {
+    ...pendingFixture, status: 'failed', output: '', error: 'SyntaxError', exitCode: 1, durationMs: 7,
+  };
+  assert.deepEqual(adaptExecutionJob(failedFixture), {
+    status: 'failed',
+    result: { jobId: 'job-1', status: 'failed', output: '', error: 'SyntaxError', exitCode: 1, durationMs: 7 },
+  });
 });

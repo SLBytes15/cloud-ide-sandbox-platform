@@ -1,10 +1,12 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import type { ExecutionJob } from '@cloud-ide/shared';
 import type { ExecutionResult, ExecutionUiStatus } from '../utils/executionState.js';
-import { getExecutionOutputSections, getExecutionStatusLabel } from '../utils/executionState.js';
+import { adaptExecutionJob, getExecutionOutputSections, getExecutionStatusLabel, hasExecutionOutput } from '../utils/executionState.js';
 
 interface ExecutionPanelProps {
-  status: ExecutionUiStatus;
+  status?: ExecutionUiStatus;
+  job?: ExecutionJob;
   result?: ExecutionResult;
   requestError?: string;
   workspaceId: string;
@@ -14,21 +16,25 @@ interface ExecutionPanelProps {
 
 export const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
   status,
+  job,
   result,
   requestError,
   workspaceId,
   filePath,
   onClose,
 }) => {
-  const outputSections = result ? getExecutionOutputSections(result) : null;
+  const jobState = job ? adaptExecutionJob(job) : undefined;
+  const displayStatus = jobState?.status ?? status ?? 'idle';
+  const displayResult = jobState?.result ?? result;
+  const outputSections = displayResult ? getExecutionOutputSections(displayResult) : null;
 
   return (
     <section className="execution-panel" aria-label="Script execution results">
       <header className="execution-panel-header">
         <div className="execution-panel-heading">
           <strong>Script execution</strong>
-          <span className={`execution-status-pill execution-status-${status}`} role="status" aria-live="polite">
-            {getExecutionStatusLabel(status)}
+          <span className={`execution-status-pill execution-status-${displayStatus}`} role="status" aria-live="polite">
+            {getExecutionStatusLabel(displayStatus)}
           </span>
           <span className="execution-source">{workspaceId} · {filePath}</span>
         </div>
@@ -37,28 +43,29 @@ export const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
         </button>
       </header>
 
-      {status === 'running' ? (
+      {displayStatus === 'running' || displayStatus === 'pending' ? (
         <div className="execution-panel-message" role="status">Waiting for the execution API to finish…</div>
-      ) : status === 'request-error' ? (
+      ) : displayStatus === 'request-error' ? (
         <div className="execution-panel-message execution-panel-error" role="alert">{requestError || 'The execution request failed.'}</div>
-      ) : status === 'idle' ? (
+      ) : displayStatus === 'idle' ? (
         <div className="execution-panel-message">
           Run is disabled while the team agrees on the execution API contract and isolated runtime. No code has been sent to the backend.
         </div>
-      ) : result && outputSections ? (
+      ) : displayResult && outputSections ? (
         <div className="execution-panel-content">
           <div className="execution-result-meta">
-            <span>{result.durationMs} ms</span>
-            <span>Exit code: {result.exitCode === null ? 'not reported' : result.exitCode}</span>
-            {result.jobId && <span>Job: {result.jobId}</span>}
+            {displayResult.durationMs !== undefined && <span>{displayResult.durationMs} ms</span>}
+            <span>Exit code: {displayResult.exitCode === null ? 'not reported' : displayResult.exitCode}</span>
+            {displayResult.jobId && <span>Job: {displayResult.jobId}</span>}
           </div>
-          {outputSections.output ? (
+          {outputSections.output && (
             <pre className="execution-output" aria-label="Execution output">{outputSections.output}</pre>
-          ) : (
-            <div className="execution-panel-message">The process returned no output.</div>
           )}
           {outputSections.error && (
             <pre className="execution-output execution-output-error" aria-label="Execution error">{outputSections.error}</pre>
+          )}
+          {!hasExecutionOutput(displayResult) && (
+            <div className="execution-panel-message">The process returned no output.</div>
           )}
         </div>
       ) : null}
