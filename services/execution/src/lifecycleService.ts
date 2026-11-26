@@ -1,6 +1,6 @@
 import type { IContainerLifecycleManager } from './types.js';
 import { DockerEngineLifecycleManager } from './dockerManager.js';
-import { MockContainerLifecycleManager } from './mockManager.js';
+import { RuntimeUnavailableError } from './runtime.js';
 
 export class LifecycleService {
   private static instance: IContainerLifecycleManager | null = null;
@@ -13,12 +13,11 @@ export class LifecycleService {
     const dockerManager = new DockerEngineLifecycleManager();
     const isDockerRunning = await dockerManager.isAvailable();
 
-    if (isDockerRunning) {
-      this.instance = dockerManager;
-    } else {
-      // Graceful fallback to sandbox mock when Docker daemon is not active on host
-      this.instance = new MockContainerLifecycleManager();
+    if (!isDockerRunning) {
+      throw new RuntimeUnavailableError('Docker Engine is unavailable; no execution manager was started');
     }
+
+    this.instance = dockerManager;
 
     // Attach process cleanup hooks for graceful shutdown
     const cleanup = async () => {

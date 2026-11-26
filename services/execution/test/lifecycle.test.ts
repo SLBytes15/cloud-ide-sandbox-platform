@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { MockContainerLifecycleManager } from '../src/mockManager.js';
 import { DEFAULT_ISOLATION_LIMITS, getDockerHostConfig } from '../src/dockerDefaults.js';
 
-describe('Container Lifecycle Manager & Isolation Controls (ADR-009)', () => {
+describe('Mock container lifecycle and requested Docker configuration (ADR-009)', () => {
   const manager = new MockContainerLifecycleManager();
 
-  it('should enforce strict resource limits and security profile', () => {
+  it('builds the expected resource and security settings', () => {
     assert.equal(DEFAULT_ISOLATION_LIMITS.memoryBytes, 536870912); // 512MB
     assert.equal(DEFAULT_ISOLATION_LIMITS.nanoCpus, 1000000000); // 1.0 vCPU
     assert.equal(DEFAULT_ISOLATION_LIMITS.pidsLimit, 64);
@@ -57,6 +57,7 @@ describe('Container Lifecycle Manager & Isolation Controls (ADR-009)', () => {
 
     const removed = await manager.removeContainer(container.id);
     assert.equal(removed, true);
+    assert.equal(await manager.removeContainer(container.id), false);
 
     const lookup = await manager.getContainer(container.id);
     assert.equal(lookup, null);
@@ -74,5 +75,6 @@ describe('Container Lifecycle Manager & Isolation Controls (ADR-009)', () => {
 
     const activeAfter = await manager.listActiveContainers();
     assert.equal(activeAfter.length, 0);
+    assert.equal(await manager.cleanupAll(), 0);
   });
 });

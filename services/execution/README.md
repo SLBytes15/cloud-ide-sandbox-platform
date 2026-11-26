@@ -1,10 +1,10 @@
-# Execution Service (Future Architecture Boundary)
+# Execution Service
 
 ## Overview
-This service directory is reserved for the future isolated code execution engine for the Zaalima Cloud IDE.
+This package provides execution-job orchestration and a Docker Engine container-lifecycle adapter. Container process execution and stream collection are not connected to the API yet, and user code must not be executed directly on the API host.
 
-## Planned Execution Architecture
-In subsequent phases, this service will be responsible for:
+## Planned capabilities
+The execution service is intended to provide:
 1. **Containerized Code Execution:** Utilizing the Docker Engine API to spin up short-lived, isolated runtime containers for user code.
 2. **Interactive Terminal Sessions:** Orchestrating PTY allocation via `node-pty` connected through WebSockets (`ws`) to client-side `xterm.js`.
 3. **Defense-in-Depth Isolation:**
@@ -13,29 +13,31 @@ In subsequent phases, this service will be responsible for:
    - Restricted system call filtering via `seccomp` profiles.
    - Read-only root filesystems and disabled network egress by default for untrusted code execution.
 
-*Note: Per architecture specifications, Docker execution is decoupled from initial setup and will be implemented in future development milestones.*
+## Runtime foundation and current boundary
 
-## Environment-independent runtime foundation
-
-The package in this directory now contains a small, testable runtime orchestration foundation:
+The package contains testable runtime orchestration and a Docker Engine container-lifecycle adapter:
 
 - validated execution request data;
 - uniquely identified job records;
 - pending/running/completed/failed/timeout state transitions;
-- a `RuntimeAdapter` interface for future Docker/process implementations;
+- a `RuntimeAdapter` interface;
+- Docker Engine create/start/stop/remove lifecycle calls with configured resource controls;
 - wall-clock timeout orchestration;
 - bounded stdout/stderr capture;
 - cleanup invocation after success and failure.
 
-This foundation does **not** execute code, start Docker containers, create namespaces/cgroups, mount filesystems, or provide network isolation.
+The API's script runner intentionally refuses to execute code until a verified isolated container execution adapter is configured. It must not fall back to spawning user code as a child process on the API host. The lifecycle manager also fails closed when Docker Engine is unavailable; the mock manager is for tests and is not reported as a live runtime.
+
+The Docker adapter configures memory, CPU, PID, read-only-root-filesystem, tmpfs, network mode, and dropped capabilities in the container create request. These are configuration-level controls only: they have not been verified against a live Docker daemon in this environment. No claim is made here about container escape resistance or production-grade isolation.
 
 ## Test status
 
-The Node test suite uses explicit fake adapters:
+The Node test suite uses explicit fake adapters and mock managers:
 
 - fake-adapter success;
 - fake-adapter failure;
 - fake-adapter timeout and abort;
-- fake-adapter cleanup assertions.
+- fake-adapter cleanup assertions and repeated cleanup;
+- a check that the execution runner rejects requests rather than running code on the host.
 
-These tests verify orchestration only. They are **not Docker integration tests** and do not demonstrate sandbox security.
+These tests verify orchestration and mock behavior only. They are **not Docker integration tests** and do not demonstrate sandbox security.

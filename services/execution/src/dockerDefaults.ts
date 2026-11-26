@@ -9,15 +9,15 @@ export const RUNTIME_DOCKER_IMAGES: Record<WorkspaceRuntime, string> = {
   rust: 'rust:1.77-alpine',
 };
 
-// Strict isolation parameters enforcing ADR-009
+// Requested Docker settings from ADR-009; these values alone do not verify runtime enforcement.
 export const DEFAULT_ISOLATION_LIMITS: ContainerResourceLimits = {
   memoryBytes: 512 * 1024 * 1024, // 512 MB
-  memorySwapBytes: 512 * 1024 * 1024, // Swap equal to memory (disables swap allocation)
+  memorySwapBytes: 512 * 1024 * 1024, // Requested swap cap equal to the memory cap
   nanoCpus: 1_000_000_000, // 1.0 vCPU
-  pidsLimit: 64, // Hard limit to prevent fork bombs
-  readOnlyRootfs: true, // Immutable base image prevents corruption
-  networkMode: 'none', // Network isolation for untrusted batch code
-  user: '1000:1000', // Strictly non-root unprivileged execution
+  pidsLimit: 64, // Requested process limit
+  readOnlyRootfs: true, // Request a read-only root filesystem
+  networkMode: 'none', // Request no Docker network
+  user: '1000:1000', // Request a non-root UID/GID
   timeoutSeconds: 15, // Wall-clock timeout for batch runs
 };
 
