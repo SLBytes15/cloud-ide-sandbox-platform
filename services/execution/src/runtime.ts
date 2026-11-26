@@ -54,6 +54,16 @@ export class ExecutionTimeoutError extends Error {
   }
 }
 
+export class RuntimeUnavailableError extends Error {
+  readonly statusCode = 503;
+  readonly code = 'RUNTIME_UNAVAILABLE';
+
+  constructor(message = 'Isolated code execution is unavailable') {
+    super(message);
+    this.name = 'RuntimeUnavailableError';
+  }
+}
+
 function validateText(value: unknown, field: string, maxLength: number, required = false): string | undefined {
   if (value === undefined) {
     if (required) throw new ExecutionValidationError(`${field} is required`);
