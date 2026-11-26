@@ -9,8 +9,11 @@ import type { FileNode, FileTreeItem } from '@cloud-ide/shared';
 // In-memory fallback cache for files
 export const inMemoryFiles = new Map<string, FileNode[]>();
 
-export function deleteFallbackFilesByWorkspace(workspaceId: string): void {
-  inMemoryFiles.delete(workspaceId);
+export function deleteFallbackFilesByWorkspace(workspaceId?: string | null): boolean {
+  if (!workspaceId || typeof workspaceId !== 'string') {
+    return false;
+  }
+  return inMemoryFiles.delete(workspaceId);
 }
 
 export function buildFileTree(files: Array<{ id: string; name: string; path: string; type: 'file' | 'directory'; parentId?: string | null }>): FileTreeItem[] {
@@ -253,9 +256,9 @@ export async function deleteFile(req: Request, res: Response, next: NextFunction
       for (const [wsId, list] of inMemoryFiles.entries()) {
         const target = list.find((f) => f.id === fileId);
         if (target) {
-          // If directory, purge target and all descendant files matching prefix
+          // If directory, purge target and all descendant files matching prefix or parentId
           const updated = target.type === 'directory'
-            ? list.filter((f) => f.id !== fileId && !f.path.startsWith(`${target.path}/`))
+            ? list.filter((f) => f.id !== fileId && !f.path.startsWith(`${target.path}/`) && f.parentId !== fileId)
             : list.filter((f) => f.id !== fileId);
           inMemoryFiles.set(wsId, updated);
           return sendSuccess(res, { deleted: true, id: fileId }, 'File deleted successfully');
