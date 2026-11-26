@@ -36,7 +36,7 @@ export function errorHandler(
   // 5. Standard ApiError or generic internal server error
   const statusCode = err.statusCode || 500;
   const errorCode = err.code || 'INTERNAL_SERVER_ERROR';
-  const message = statusCode >= 500 && process.env.NODE_ENV === 'production'
+  const message = (statusCode === 500 || errorCode === 'INTERNAL_SERVER_ERROR') && process.env.NODE_ENV === 'production'
     ? 'An unexpected internal error occurred'
     : err.message || 'An unexpected error occurred';
   const details = 'details' in err ? err.details : undefined;
