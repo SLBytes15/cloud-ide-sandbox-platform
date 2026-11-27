@@ -13,7 +13,9 @@ export function deleteFallbackFilesByWorkspace(workspaceId?: string | null): boo
   if (!workspaceId || typeof workspaceId !== 'string') {
     return false;
   }
-  return inMemoryFiles.delete(workspaceId);
+  const cleanId = workspaceId.trim();
+  if (!cleanId) return false;
+  return inMemoryFiles.delete(cleanId);
 }
 
 export function buildFileTree(files: Array<{ id: string; name: string; path: string; type: 'file' | 'directory'; parentId?: string | null }>): FileTreeItem[] {
@@ -31,16 +33,32 @@ export function buildFileTree(files: Array<{ id: string; name: string; path: str
     });
   }
 
-  // Nest children
+  // Nest children avoiding self-references and cyclical dependencies
   for (const f of files) {
     const current = itemMap.get(f.id)!;
-    if (f.parentId && itemMap.has(f.parentId)) {
-      const parent = itemMap.get(f.parentId)!;
-      if (!parent.children) parent.children = [];
-      parent.children.push(current);
-    } else {
-      rootItems.push(current);
+    if (f.parentId && f.parentId !== f.id && itemMap.has(f.parentId)) {
+      // Check for cycles before attaching to parent
+      let isCycle = false;
+      let ancestorId: string | null = f.parentId;
+      const visited = new Set<string>([f.id]);
+      while (ancestorId && itemMap.has(ancestorId)) {
+        if (visited.has(ancestorId)) {
+          isCycle = true;
+          break;
+        }
+        visited.add(ancestorId);
+        const parentNode = files.find((item) => item.id === ancestorId);
+        ancestorId = parentNode?.parentId || null;
+      }
+
+      if (!isCycle) {
+        const parent = itemMap.get(f.parentId)!;
+        if (!parent.children) parent.children = [];
+        parent.children.push(current);
+        continue;
+      }
     }
+    rootItems.push(current);
   }
 
   return rootItems;

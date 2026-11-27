@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { scriptRunner } from '@cloud-ide/execution';
 import { ExecutionJobModel } from '../models/executionJob.model.js';
-import { BadRequestError } from '../utils/errors.js';
+import { BadRequestError, ConflictError } from '../utils/errors.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { isDatabaseConnected } from '../config/database.js';
 import type { WorkspaceRuntime } from '@cloud-ide/shared';
@@ -11,6 +11,13 @@ export const MIN_TIMEOUT_MS = 100;
 export const MAX_TIMEOUT_MS = 30000;
 export const DEFAULT_TIMEOUT_MS = 5000;
 export const MAX_CODE_LENGTH = 500000;
+
+// Concurrency tracking: workspaces currently executing code
+export const activeWorkspaceExecutions = new Set<string>();
+
+export function isWorkspaceExecuting(workspaceId: string): boolean {
+  return activeWorkspaceExecutions.has(workspaceId);
+}
 
 export interface ValidatedExecutionInput {
   workspaceId: string;
@@ -85,6 +92,15 @@ export async function executeCode(req: Request, res: Response, next: NextFunctio
     const validated = validateExecutionInput(rawWorkspaceId, req.body);
     const triggeredBy = (req as any).user?.id || 'usr_anonymous';
 
+    // Duplicate-request & concurrent execution prevention per workspace
+    if (activeWorkspaceExecutions.has(validated.workspaceId)) {
+      throw new ConflictError(
+        `An execution job is already in progress for workspace "${validated.workspaceId}"`
+      );
+    }
+
+    activeWorkspaceExecutions.add(validated.workspaceId);
+
     try {
       const result = await scriptRunner.execute({
         workspaceId: validated.workspaceId,
@@ -92,6 +108,11 @@ export async function executeCode(req: Request, res: Response, next: NextFunctio
         code: validated.code,
         timeoutMs: validated.timeoutMs,
       });
+
+      const completedAt = new Date();
+      const durationMs = typeof result.durationMs === 'number' && result.durationMs >= 0
+        ? result.durationMs
+        : Math.max(0, completedAt.getTime() - startTime);
 
       // Audit log execution job if database is available
       if (isDatabaseConnected() && validated.workspaceId) {
@@ -104,16 +125,19 @@ export async function executeCode(req: Request, res: Response, next: NextFunctio
             exitCode: result.exitCode,
             output: result.output,
             error: result.error,
-            durationMs: result.durationMs,
-            completedAt: new Date(),
+            durationMs,
+            completedAt,
           });
         } catch {
           // Non-blocking audit failure
         }
       }
 
-      return sendSuccess(res, result, 'Code executed successfully', 200);
+      return sendSuccess(res, { ...result, durationMs }, 'Code executed successfully', 200);
     } catch (execErr: any) {
+      const completedAt = new Date();
+      const durationMs = Math.max(0, completedAt.getTime() - startTime);
+
       // Audit log failed execution job if database is available
       if (isDatabaseConnected() && validated.workspaceId) {
         try {
@@ -125,8 +149,8 @@ export async function executeCode(req: Request, res: Response, next: NextFunctio
             exitCode: null,
             output: '',
             error: execErr?.message || 'Execution failed',
-            durationMs: Date.now() - startTime,
-            completedAt: new Date(),
+            durationMs,
+            completedAt,
           });
         } catch {
           // Non-blocking audit failure
@@ -134,6 +158,8 @@ export async function executeCode(req: Request, res: Response, next: NextFunctio
       }
 
       throw execErr;
+    } finally {
+      activeWorkspaceExecutions.delete(validated.workspaceId);
     }
   } catch (err) {
     return next(err);

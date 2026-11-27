@@ -7,6 +7,8 @@ import {
   MIN_TIMEOUT_MS,
   MAX_TIMEOUT_MS,
   DEFAULT_TIMEOUT_MS,
+  activeWorkspaceExecutions,
+  isWorkspaceExecuting,
 } from '../src/controllers/execution.controller.js';
 import {
   inMemoryFiles,
@@ -15,7 +17,7 @@ import {
   buildFileTree,
 } from '../src/controllers/file.controller.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
-import { BadRequestError } from '../src/utils/errors.js';
+import { BadRequestError, ConflictError } from '../src/utils/errors.js';
 import type { FileNode } from '@cloud-ide/shared';
 
 function createMockExpress(body: any = {}, params: any = {}) {
@@ -160,6 +162,45 @@ describe('Execution Job API Foundation & Input Validation (Task 1.D)', () => {
     assert.equal(res.body.error.code, 'RUNTIME_UNAVAILABLE');
     assert.ok(res.body.error.message.includes('Isolated code execution is unavailable'));
   });
+
+  it('should reject duplicate execution requests when an execution is already in flight for the workspace', async () => {
+    const wsId = 'ws_duplicate_test';
+    // Manually mark workspace as executing
+    activeWorkspaceExecutions.add(wsId);
+    assert.equal(isWorkspaceExecuting(wsId), true);
+
+    const { req, res, next, getNextErr } = createMockExpress(
+      { code: 'console.log("duplicate");', runtime: 'node' },
+      { id: wsId }
+    );
+
+    await executeCode(req, res, next);
+
+    const err = getNextErr();
+    assert.ok(err, 'Expected duplicate execution to be rejected');
+    assert.ok(err instanceof ConflictError);
+    assert.equal(err.statusCode, 409);
+    assert.equal(err.code, 'CONFLICT');
+    assert.ok(err.message.includes('already in progress'));
+
+    // Clean up
+    activeWorkspaceExecutions.delete(wsId);
+    assert.equal(isWorkspaceExecuting(wsId), false);
+  });
+
+  it('should release workspace execution lock in finally block even when execution fails', async () => {
+    const wsId = 'ws_lock_cleanup_test';
+    const { req, res, next } = createMockExpress(
+      { code: 'console.log("cleanup test");', runtime: 'node' },
+      { id: wsId }
+    );
+
+    await executeCode(req, res, next);
+
+    // Verify lock is cleared after execution throws RuntimeUnavailableError
+    assert.equal(isWorkspaceExecuting(wsId), false);
+    assert.equal(activeWorkspaceExecutions.has(wsId), false);
+  });
 });
 
 describe('Fallback File Storage Idempotency & Cascade Deletion (Task 1.B)', () => {
@@ -296,5 +337,70 @@ describe('Fallback File Storage Idempotency & Cascade Deletion (Task 1.B)', () =
     assert.equal(tree.length, 2);
     assert.ok(tree.some((t) => t.id === 'f_valid'));
     assert.ok(tree.some((t) => t.id === 'f_orphaned'));
+  });
+
+  it('should prevent circular parent references and self-referencing parents from crashing JSON serialization', () => {
+    const cyclicalFiles: FileNode[] = [
+      {
+        id: 'node_self',
+        workspaceId: 'ws_cycle',
+        name: 'self.ts',
+        path: '/self.ts',
+        type: 'file',
+        parentId: 'node_self', // self-referencing parentId
+        size: 10,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'node_a',
+        workspaceId: 'ws_cycle',
+        name: 'a',
+        path: '/a',
+        type: 'directory',
+        parentId: 'node_b', // Cycle: A -> B -> A
+        size: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'node_b',
+        workspaceId: 'ws_cycle',
+        name: 'b',
+        path: '/b',
+        type: 'directory',
+        parentId: 'node_a', // Cycle: B -> A
+        size: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    const tree = buildFileTree(cyclicalFiles);
+    assert.ok(Array.isArray(tree));
+    // Verify JSON serialization does not throw TypeError (converting circular structure)
+    assert.doesNotThrow(() => JSON.stringify(tree));
+  });
+
+  it('should trim whitespace when deleting fallback files by workspace ID', () => {
+    const wsId = 'ws_padded_test';
+    inMemoryFiles.set(wsId, [
+      {
+        id: 'f_pad',
+        workspaceId: wsId,
+        name: 'test.ts',
+        path: '/test.ts',
+        type: 'file',
+        size: 10,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    assert.equal(inMemoryFiles.has(wsId), true);
+    // Delete using padded string
+    const deleted = deleteFallbackFilesByWorkspace(`  ${wsId}  `);
+    assert.equal(deleted, true);
+    assert.equal(inMemoryFiles.has(wsId), false);
   });
 });
