@@ -16,6 +16,10 @@ class FakeRuntimeAdapter implements RuntimeAdapter {
   cleanedUp: string[] = [];
   constructor(private readonly result: RuntimeResult | Error) {}
 
+  async isAvailable(): Promise<boolean> {
+    return true;
+  }
+
   async run(_job: ExecutionJob, _signal: AbortSignal): Promise<RuntimeResult> {
     if (this.result instanceof Error) throw this.result;
     return this.result;
@@ -75,12 +79,16 @@ test('fake-adapter failure records status and cleans up', async () => {
   const job = await runtime.execute({ workspaceId: 'ws-1', command: 'false' });
 
   assert.equal(job.status, 'failed');
-  assert.equal(job.error, 'adapter failed');
+  assert.equal(job.error, 'Execution failed');
   assert.deepEqual(adapter.cleanedUp, ['job-failed']);
 });
 
 test('fake-adapter cleanup failure is recorded without throwing to the caller', async () => {
   class CleanupFailureAdapter implements RuntimeAdapter {
+    async isAvailable(): Promise<boolean> {
+      return true;
+    }
+
     async run(_job: ExecutionJob, _signal: AbortSignal): Promise<RuntimeResult> {
       return { exitCode: 0, stdout: '', stderr: '' };
     }
@@ -96,13 +104,18 @@ test('fake-adapter cleanup failure is recorded without throwing to the caller', 
   const job = await runtime.execute({ workspaceId: 'ws-1', command: 'echo hello' });
 
   assert.equal(job.status, 'failed');
-  assert.match(job.error ?? '', /Cleanup failed: cleanup failed/);
+  assert.match(job.error ?? '', /Cleanup failed/);
+  assert.doesNotMatch(job.error ?? '', /cleanup failed/);
 });
 
 test('fake-adapter timeout aborts and cleans up', async () => {
   class TimeoutFakeAdapter implements RuntimeAdapter {
     cleanedUp = false;
     aborted = false;
+
+    async isAvailable(): Promise<boolean> {
+      return true;
+    }
 
     async run(_job: ExecutionJob, signal: AbortSignal): Promise<RuntimeResult> {
       return new Promise((_resolve, reject) => {
@@ -127,4 +140,111 @@ test('fake-adapter timeout aborts and cleans up', async () => {
   assert.equal(job.status, 'timeout');
   assert.equal(adapter.aborted, true);
   assert.equal(adapter.cleanedUp, true);
+});
+
+test('missing or unavailable runtime is rejected before job creation or execution', async () => {
+  let runCount = 0;
+  let cleanupCount = 0;
+  const unavailableAdapter: RuntimeAdapter = {
+    async isAvailable() {
+      return false;
+    },
+    async run() {
+      runCount++;
+      return { exitCode: 0, stdout: '', stderr: '' };
+    },
+    async cleanup() {
+      cleanupCount++;
+    }
+  };
+  const manager = new ExecutionJobManager(() => 'job-unavailable');
+  const missingRuntime = new ExecutionRuntime(undefined, manager);
+  const unavailableRuntime = new ExecutionRuntime(unavailableAdapter, manager);
+
+  await assert.rejects(
+    missingRuntime.execute({ workspaceId: 'ws-1', command: 'must not run' }),
+    { code: 'RUNTIME_UNAVAILABLE', statusCode: 503 }
+  );
+  await assert.rejects(
+    unavailableRuntime.execute({ workspaceId: 'ws-1', command: 'must not run' }),
+    { code: 'RUNTIME_UNAVAILABLE', statusCode: 503 }
+  );
+
+  assert.equal(manager.get('job-unavailable'), undefined);
+  assert.equal(runCount, 0);
+  assert.equal(cleanupCount, 0);
+});
+
+test('runtime health-check failures are sanitized and fail closed', async () => {
+  let runCount = 0;
+  const adapter: RuntimeAdapter = {
+    async isAvailable() {
+      throw new Error('C:\\host\\private\\runtime.sock');
+    },
+    async run() {
+      runCount++;
+      return { exitCode: 0, stdout: '', stderr: '' };
+    },
+    async cleanup() {}
+  };
+  const runtime = new ExecutionRuntime(adapter, new ExecutionJobManager());
+
+  await assert.rejects(
+    runtime.execute({ workspaceId: 'ws-1', command: 'must not run' }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'Isolated code execution is unavailable');
+      assert.doesNotMatch(error.message, /private|runtime\.sock/);
+      return true;
+    }
+  );
+  assert.equal(runCount, 0);
+});
+
+test('runtime rejects invalid timeout and output limits', () => {
+  const manager = new ExecutionJobManager();
+  const adapter = new FakeRuntimeAdapter({ exitCode: 0, stdout: '', stderr: '' });
+
+  for (const options of [
+    { timeoutMs: 0 },
+    { timeoutMs: Number.NaN },
+    { timeoutMs: 2_147_483_648 },
+    { maxOutputBytes: 0 },
+    { maxOutputBytes: Number.POSITIVE_INFINITY }
+  ]) {
+    assert.throws(
+      () => new ExecutionRuntime(adapter, manager, options),
+      ExecutionValidationError
+    );
+  }
+});
+
+test('late adapter completion after timeout cannot replace the terminal timeout result', async () => {
+  let resolveRun: ((result: RuntimeResult) => void) | undefined;
+  let cleanupCount = 0;
+  const adapter: RuntimeAdapter = {
+    async isAvailable() {
+      return true;
+    },
+    run() {
+      return new Promise((resolve) => {
+        resolveRun = resolve;
+      });
+    },
+    async cleanup() {
+      cleanupCount++;
+    }
+  };
+  const manager = new ExecutionJobManager(() => 'job-late-completion');
+  const runtime = new ExecutionRuntime(adapter, manager, { timeoutMs: 5 });
+
+  const result = await runtime.execute({ workspaceId: 'ws-1', command: 'wait' });
+  assert.equal(result.status, 'timeout');
+
+  resolveRun?.({ exitCode: 0, stdout: 'late result', stderr: '' });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(manager.get('job-late-completion')?.status, 'timeout');
+  assert.equal(manager.get('job-late-completion')?.stdout, '');
+  assert.equal(cleanupCount, 1);
 });

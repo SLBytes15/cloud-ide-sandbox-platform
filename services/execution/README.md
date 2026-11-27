@@ -20,13 +20,13 @@ The package contains testable runtime orchestration and a Docker Engine containe
 - validated execution request data;
 - uniquely identified job records;
 - pending/running/completed/failed/timeout state transitions;
-- a `RuntimeAdapter` interface;
+- a `RuntimeAdapter` interface with a required availability check;
 - Docker Engine create/start/stop/remove lifecycle calls with configured resource controls;
 - wall-clock timeout orchestration;
 - bounded stdout/stderr capture;
 - cleanup invocation after success and failure.
 
-The API's script runner intentionally refuses to execute code until a verified isolated container execution adapter is configured. It must not fall back to spawning user code as a child process on the API host. The lifecycle manager also fails closed when Docker Engine is unavailable; the mock manager is for tests and is not reported as a live runtime.
+The orchestration runtime rejects missing, unhealthy, or incomplete adapters before creating a job or invoking execution. It also rejects invalid timeout/output-limit configuration. Adapter execution and cleanup errors are returned as generic job errors rather than exposing internal process details. The API's script runner intentionally refuses to execute code until a verified isolated container execution adapter is configured. It must not fall back to spawning user code as a child process on the API host. The lifecycle manager also fails closed when Docker Engine is unavailable; the mock manager is for tests and is not reported as a live runtime.
 
 The Docker adapter configures memory, CPU, PID, read-only-root-filesystem, tmpfs, network mode, and dropped capabilities in the container create request. These are configuration-level controls only: they have not been verified against a live Docker daemon in this environment. No claim is made here about container escape resistance or production-grade isolation.
 
@@ -37,7 +37,8 @@ The Node test suite uses explicit fake adapters and mock managers:
 - fake-adapter success;
 - fake-adapter failure;
 - fake-adapter timeout and abort;
-- fake-adapter cleanup assertions and repeated cleanup;
+- fake-adapter health preflight, invalid configuration, sanitized failures, and late completion after timeout;
+- fake-adapter cleanup assertions and mock-manager repeated cleanup;
 - a check that the execution runner rejects requests rather than running code on the host.
 
 These tests verify orchestration and mock behavior only. They are **not Docker integration tests** and do not demonstrate sandbox security.
