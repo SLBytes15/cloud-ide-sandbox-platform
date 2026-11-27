@@ -175,3 +175,25 @@ Before execution code is considered secure:
 | `npm test --workspace=@cloud-ide/execution` | Passed - 6 fake-adapter tests |
 
 No commit or push was created. The user must perform Git review and any push/pull-request steps themselves.
+
+## 11. Follow-up implementation status - 2026-11-27
+
+This dated update supplements the 2026-11-24 review; it does not change the Docker or isolation limitations recorded above.
+
+### Implemented and unit-tested on `mahak`
+
+- Execution orchestration requires an adapter with `isAvailable`, `run`, and `cleanup`; missing, incomplete, unhealthy, or health-check-failing adapters are rejected before job creation or execution.
+- Timeout and output-limit settings are validated, including the maximum supported Node.js timer delay.
+- Adapter run and cleanup failures are represented with generic job error messages rather than returning raw adapter details.
+- A late adapter completion after timeout does not replace the timeout result; timeout still aborts the adapter signal and invokes cleanup.
+- The API-facing `ExecutionRunner` continues to reject execution while no verified isolated adapter is configured. A source search in its runner/runtime boundary found no `child_process`, `exec`, `spawn`, `execFile`, or `fork` host-execution API.
+
+### Validation
+
+| Command | Result |
+|---|---|
+| `npm test --workspace=@cloud-ide/execution` | Passed: 18 tests, 0 failures; includes fake-adapter and mock-manager tests only |
+| `npm run typecheck` | Passed across shared, execution, API, and web workspaces |
+| Docker/container integration, container process execution, real stream collection, and isolation tests | Not run; no Docker verification is claimed |
+
+These results verify local orchestration logic only. They do not prove container behavior, isolation, or escape resistance. No shared API/status contract was changed.

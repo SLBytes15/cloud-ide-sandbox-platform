@@ -29,6 +29,7 @@ export interface RuntimeResult {
 }
 
 export interface RuntimeAdapter {
+  isAvailable(): Promise<boolean>;
   run(job: ExecutionJob, signal: AbortSignal): Promise<RuntimeResult>;
   cleanup(jobId: string): Promise<void>;
 }
@@ -145,22 +146,30 @@ export class ExecutionRuntime {
   private readonly maxOutputBytes: number;
 
   constructor(
-    private readonly adapter: RuntimeAdapter,
+    private readonly adapter: RuntimeAdapter | undefined,
     private readonly jobs: ExecutionJobManager,
     options: RuntimeOptions = {}
   ) {
     this.timeoutMs = options.timeoutMs ?? 15_000;
     this.maxOutputBytes = options.maxOutputBytes ?? 1_048_576;
+
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0 || this.timeoutMs > 2_147_483_647) {
+      throw new ExecutionValidationError('timeoutMs must be a positive integer supported by the runtime');
+    }
+    if (!Number.isSafeInteger(this.maxOutputBytes) || this.maxOutputBytes <= 0) {
+      throw new ExecutionValidationError('maxOutputBytes must be a positive safe integer');
+    }
   }
 
   async execute(request: ExecutionRequest): Promise<ExecutionJob> {
+    const adapter = await this.ensureRuntimeAvailable();
     const job = this.jobs.create(request);
     const running = this.jobs.transition(job.id, 'running');
     const startedAt = Date.now();
     const controller = new AbortController();
 
     try {
-      const result = await this.runWithTimeout(running, controller);
+      const result = await this.runWithTimeout(adapter, running, controller);
       const stdout = truncateOutput(result.stdout, this.maxOutputBytes);
       const stderr = truncateOutput(result.stderr, this.maxOutputBytes);
       const stderrValue = stderr.truncated
@@ -172,7 +181,7 @@ export class ExecutionRuntime {
         stderr: stderrValue,
         durationMs: Date.now() - startedAt
       });
-      await this.cleanupOrFail(job.id, completed, Date.now() - startedAt);
+      await this.cleanupOrFail(adapter, job.id, completed, Date.now() - startedAt);
       return this.jobs.get(job.id) ?? completed;
     } catch (error) {
       if (error instanceof ExecutionTimeoutError) {
@@ -181,34 +190,59 @@ export class ExecutionRuntime {
           error: error.message,
           durationMs: Date.now() - startedAt
         });
-        await this.cleanupOrFail(job.id, timeoutJob, Date.now() - startedAt);
+        await this.cleanupOrFail(adapter, job.id, timeoutJob, Date.now() - startedAt);
         return this.jobs.get(job.id) ?? timeoutJob;
       }
-      const message = error instanceof Error ? error.message : 'Unknown execution error';
       const failed = this.jobs.transition(job.id, 'failed', {
         exitCode: null,
-        error: message,
+        error: 'Execution failed',
         durationMs: Date.now() - startedAt
       });
-      await this.cleanupOrFail(job.id, failed, Date.now() - startedAt);
+      await this.cleanupOrFail(adapter, job.id, failed, Date.now() - startedAt);
       return this.jobs.get(job.id) ?? failed;
     }
   }
 
-  private async cleanupOrFail(jobId: string, job: ExecutionJob, durationMs: number): Promise<void> {
+  private async ensureRuntimeAvailable(): Promise<RuntimeAdapter> {
+    const adapter = this.adapter;
     try {
-      await this.adapter.cleanup(jobId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown cleanup error';
+      if (
+        !adapter
+        || typeof adapter.isAvailable !== 'function'
+        || typeof adapter.run !== 'function'
+        || typeof adapter.cleanup !== 'function'
+      ) {
+        throw new RuntimeUnavailableError();
+      }
+      if (await adapter.isAvailable() === true) return adapter;
+    } catch {
+      // Health-check details are intentionally not exposed to callers.
+    }
+    throw new RuntimeUnavailableError();
+  }
+
+  private async cleanupOrFail(
+    adapter: RuntimeAdapter,
+    jobId: string,
+    job: ExecutionJob,
+    durationMs: number
+  ): Promise<void> {
+    try {
+      await adapter.cleanup(jobId);
+    } catch {
       this.jobs.transition(jobId, 'failed', {
         exitCode: job.exitCode,
-        error: `${job.error ? `${job.error}; ` : ''}Cleanup failed: ${message}`,
+        error: `${job.error ? `${job.error}; ` : ''}Cleanup failed`,
         durationMs
       });
     }
   }
 
-  private runWithTimeout(job: ExecutionJob, controller: AbortController): Promise<RuntimeResult> {
+  private runWithTimeout(
+    adapter: RuntimeAdapter,
+    job: ExecutionJob,
+    controller: AbortController
+  ): Promise<RuntimeResult> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<RuntimeResult>((_, reject) => {
       timer = setTimeout(() => {
@@ -218,7 +252,7 @@ export class ExecutionRuntime {
     });
 
     return Promise.race([
-      this.adapter.run(job, controller.signal),
+      adapter.run(job, controller.signal),
       timeout
     ]).finally(() => {
       if (timer) clearTimeout(timer);
